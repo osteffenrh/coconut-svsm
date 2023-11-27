@@ -4,3 +4,6 @@
 [submodule "external-crates/intrusive-rs"]
 	path = external-crates/intrusive-rs
 	url = https://github.com/Amanieu/intrusive-rs.git
+[submodule "packit"]
+	url = https://github.com/osteffenrh/packit.git
+	branch = bump-zerocopy
