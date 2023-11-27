@@ -1,0 +1,3 @@
+[submodule "external-crates/packit"]
+	path = external-crates/packit
+	url = https://github.com/coconut-svsm/packit.git
