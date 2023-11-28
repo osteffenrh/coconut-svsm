@@ -19,8 +19,6 @@ doctest = true
 
 [dependencies]
 bitflags = "2.4"
-gdbstub = { version = "0.6.6", default-features = false, optional = true }
-gdbstub_arch = { version = "0.2.4", optional = true }
 intrusive-collections = { path = "external-crates/intrusive-rs" }
 log = { version = "0.4.20", features = ["max_level_info", "release_max_level_info"] }
 packit = { path = "external-crates/packit" }
@@ -32,7 +30,6 @@ test = { version = "0.1.0", path = "test" }
 [features]
 default = ["enable-stacktrace"]
 enable-stacktrace = []
-enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 
 [dev-dependencies]
 memoffset = "0.9.0"
