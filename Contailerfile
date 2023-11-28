@@ -1,0 +1,23 @@
+FROM fedora:39
+
+RUN dnf install -y \
+ binutils  \
+ cargo  \
+ curl  \
+ gcc  \
+ git  \
+ make  \
+ rust  \
+ rust-aes-gcm+aes-devel  \
+ rust-aes-gcm+alloc-devel  \
+ rust-bitflags-devel  \
+ rust-log-devel  \
+ rust-memoffset-devel  \
+ rust-proc-macro2-devel  \
+ rust-quote-devel  \
+ rust-std-static-x86_64-unknown-none  \
+ rust-syn-devel  \
+ rust-unicode-ident-devel  \
+ rust-zerocopy-derive-devel  \
+ rust-zerocopy-devel  \
+ rust-zerocopy+byteorder-devel
