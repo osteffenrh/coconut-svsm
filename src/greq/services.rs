@@ -140,3 +140,32 @@ pub fn get_report_ex(user_data: &ReportUserData) -> Result<(Box<AttestationRepor
         Err(e) => Err(ReportError::RequestError(e)),
     }
 }
+
+pub fn test_get_regular_report() {
+    use crate::{
+        mm::alloc::{allocate_zeroed_page, free_page},
+        types::PAGE_SIZE,
+    };
+    use core::slice::from_raw_parts_mut;
+
+    let vaddr = allocate_zeroed_page().unwrap();
+    let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
+
+    buffer[0] = 0x31;
+    buffer[1] = 0x32;
+    buffer[2] = 0x33;
+    buffer[3] = 0x34;
+
+    match get_regular_report(buffer) {
+        Ok(response_len) => {
+            assert_eq!(response_len, REPORT_RESPONSE_SIZE);
+
+            let response = SnpReportResponse::try_from_as_ref(buffer).unwrap();
+            log::info!("Report: {:02x?}", response);
+        }
+        Err(e) => {
+            panic!("get_regular_report() failed, e={e:?}");
+        }
+    };
+    free_page(vaddr);
+}

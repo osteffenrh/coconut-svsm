@@ -443,24 +443,27 @@ pub extern "C" fn svsm_main() {
 
     guest_request_driver_init();
 
-    use svsm::greq::services::get_report_ex;
+    //use svsm::greq::services::get_report_ex;
+    use svsm::greq::services::test_get_regular_report;
 
     log::info!("Getting report");
-    let res = get_report_ex(&[0u8;64]);
-    match res {
-        Ok((report, certs)) => {
+    test_get_regular_report();
 
-            log::info!("Got a report: {:02x?}", &report);
-            log::info!("Got Certs {:02x?}", &certs[..64]);
+    //let res = get_report_ex(&[0u8;64]);
+    //match res {
+    //    Ok((report, certs)) => {
 
-            let measurement_string = report
-                .measurement
-                .map(|v| format!("{v:02x}"))
-                .join("");
-            log::info!("SNP Launch Measurement: {measurement_string}");
-        },
-        Err(e) => log::info!("Error getting attestation report: {e:?}"),
-    }
+    //        log::info!("Got a report: {:02x?}", &report);
+    //        log::info!("Got Certs {:02x?}", &certs[..64]);
+
+    //        let measurement_string = report
+    //            .measurement
+    //            .map(|v| format!("{v:02x}"))
+    //            .join("");
+    //        log::info!("SNP Launch Measurement: {measurement_string}");
+    //    },
+    //    Err(e) => log::info!("Error getting attestation report: {e:?}"),
+    //}
 
     if let Some(ref fw_meta) = fw_metadata {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
