@@ -122,6 +122,7 @@ enum GHCBExitCode {}
 
 impl GHCBExitCode {
     pub const IOIO: u64 = 0x7b;
+    pub const MMIO_WRITE: u64 = 0x80000002;
     pub const SNP_PSC: u64 = 0x8000_0010;
     pub const GUEST_REQUEST: u64 = 0x8000_0011;
     pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
@@ -476,6 +477,20 @@ impl GHCB {
         let exit_info_2: u64 = vmsa_gpa.into();
         self.set_rax(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
+        Ok(())
+    }
+
+    pub fn mmio_write_byte(
+        &mut self,
+        pa: PhysAddr,
+        value: u8
+    ) -> Result<(), SvsmError> {
+        self.clear();
+        self.write_buffer(&value, 0)?;
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch(buffer_pa);
+        self.vmgexit(GHCBExitCode::MMIO_WRITE, u64::from(pa), 1)?;
         Ok(())
     }
 
