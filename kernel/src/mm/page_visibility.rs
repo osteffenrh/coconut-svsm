@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::VirtAddr;
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::this_cpu_mut;
@@ -22,6 +22,32 @@ pub fn make_page_shared(vaddr: VirtAddr) {
     pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)
         .expect("Pvalidate failed when making page shared");
     let paddr = virt_to_phys(vaddr);
+    if valid_bitmap_valid_addr(paddr) {
+        valid_bitmap_clear_valid_4k(paddr);
+    }
+
+    // Ask the hypervisor to make the page shared.
+    current_ghcb()
+        .page_state_change(
+            paddr,
+            paddr + PAGE_SIZE,
+            PageSize::Regular,
+            PageStateChangeOp::PscShared,
+        )
+        .expect("Hypervisor failed to make page shared");
+
+    // Update the page tables to map the page as shared.
+    this_cpu_mut()
+        .get_pgtable()
+        .set_shared_4k(vaddr)
+        .expect("Failed to remap shared page in page tables");
+    flush_tlb_global_sync();
+}
+
+pub fn make_page_shared_2(vaddr: VirtAddr, paddr: PhysAddr) {
+    // Revoke page validation before changing page state.
+    pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)
+        .expect("Pvalidate failed when making page shared");
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_clear_valid_4k(paddr);
     }
