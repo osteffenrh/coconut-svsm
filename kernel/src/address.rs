@@ -116,6 +116,9 @@ impl PhysAddr {
     pub const fn null() -> Self {
         Self(0)
     }
+    pub const fn const_add(&self, offset: usize) -> Self {
+        PhysAddr::new(self.0 + offset)
+    }
 }
 
 impl fmt::Display for PhysAddr {
