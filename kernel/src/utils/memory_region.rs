@@ -27,6 +27,13 @@ where
         Self { start, end }
     }
 
+    /// Create a new memory region ending at address `end`, spanning `len`
+    /// bytes.
+    pub fn new_downward(end: A, len: usize) -> Self {
+        let start = A::from(end.bits() - len);
+        Self { start, end }
+    }
+
     /// Create a new memory region with overflow checks.
     ///
     /// ```rust
