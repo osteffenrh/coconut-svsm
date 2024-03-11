@@ -440,15 +440,15 @@ pub extern "C" fn svsm_main() {
         }
     }
 
-    use svsm::block::pflash;
+    use svsm::block::vfat_test;
     let kernel_region = new_kernel_region(launch_info);
     let flash_regions = config.get_fw_regions(&kernel_region);
-    let svsm_pflash_size = PAGE_SIZE * 4;
+    let svsm_pflash_size = 1024000;
     if let Some(last_region) = flash_regions.iter().last() {
         log::info!("last region {:016x} - {:016x}", last_region.start(), last_region.end());
         log::info!("deducing svsm pflash region from that...");
         let svsm_pflash_area = MemoryRegion::<PhysAddr>::new_downward(last_region.start(), svsm_pflash_size);
-        pflash::test(svsm_pflash_area);
+        vfat_test::test_vfat(svsm_pflash_area);
         debug_break();
     } else {
         log::info!("No flash regions?");

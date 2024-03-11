@@ -8,4 +8,7 @@ pub mod api;
 pub mod ramdisk;
 pub mod pflash;
 
+pub mod fat;
+pub mod vfat_test;
+
 pub use api::*;

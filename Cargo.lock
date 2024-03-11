@@ -261,6 +261,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs#1aa43f755572c6848fd981eafd11c02a4825dd62"
+dependencies = [
+ "bitflags 2.4.2",
+ "log",
+]
+
+[[package]]
 name = "gdbstub"
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -545,6 +554,7 @@ dependencies = [
  "bitflags 2.4.2",
  "bootlib",
  "cpuarch",
+ "fatfs",
  "gdbstub",
  "gdbstub_arch",
  "igvm_defs",
