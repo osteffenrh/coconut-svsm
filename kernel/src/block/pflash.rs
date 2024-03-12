@@ -42,7 +42,8 @@ mod util {
     }
 }
 
-struct Pflash {
+#[derive(Debug, Clone, Copy)]
+pub struct Pflash {
     base_address: PhysAddr,
     size: usize,
 }
@@ -62,7 +63,7 @@ impl Pflash {
 
     fn read_page(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
         let (page, poffs) = self.get_pa(offset);
-        log::info!("  pr {page:016x}, poffs={poffs:04x}");
+        //log::info!("  pr {page:016x}, poffs={poffs:04x}");
 
         let guard = util::map_page_shared(page)?;
         let data =
@@ -75,7 +76,7 @@ impl Pflash {
 
     fn write_page(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
         let (page, poffs) = self.get_pa(offset);
-        log::info!("  pw {page:016x}, poffs={poffs:04x}");
+        //log::info!("  pw {page:016x}, poffs={poffs:04x}");
 
         let _guard = util::map_page_shared(page)?;
 
@@ -83,7 +84,7 @@ impl Pflash {
         for p in 0..len {
             let pa = page.const_add(poffs + p);
             let v = buf[p];
-            log::info!("flash write buf[{len}] to pa {pa:016x}, v = {v:02x}");
+            //log::info!("flash write buf[{len}] to pa {pa:016x}, v = {v:02x}");
 
             cpu::ghcb::current_ghcb()
                 .mmio_write_byte(pa, WRITE_BYTE_CMD)
@@ -101,6 +102,7 @@ impl Pflash {
 
 impl BlockDev for Pflash {
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
+        //log::info!("flash read offset={offset}, len={}", buf.len());
         let mut current = min(offset, self.size);
         let mut len = buf.len();
         let mut bytes: usize = 0;
@@ -114,7 +116,7 @@ impl BlockDev for Pflash {
             if page_len == 0 {
                 break;
             }
-            log::info!(" rr buf[{buf_offset}..{buf_end}], current={current}");
+            //log::info!(" rr buf[{buf_offset}..{buf_end}], current={current}");
             self.read_page(&mut buf[buf_offset..buf_end], current)?;
 
             buf_offset = buf_end;
@@ -127,6 +129,7 @@ impl BlockDev for Pflash {
     }
 
     fn write(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
+        //log::info!("flash write offset={offset}, len={}", buf.len());
         let mut current = min(offset, self.size);
         let mut len = buf.len();
         let mut bytes: usize = 0;
