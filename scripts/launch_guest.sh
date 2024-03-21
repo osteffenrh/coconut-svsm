@@ -14,7 +14,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
-COM3_SERIAL="-serial null"  # used by hyper-v
+COM3_SERIAL="-serial null"  # used by hyper-v and proxy on Qemu
 COM4_SERIAL="-serial null"  # used by in-SVSM tests
 QEMU_EXIT_DEVICE=""
 QEMU_TEST_IO_DEVICE=""
@@ -47,6 +47,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     -d|--debugserial)
       COM2_SERIAL="-serial pty"
+      shift
+      ;;
+    -p|--proxy)
+      COM3_SERIAL="-serial unix:$2"
+      shift
       shift
       ;;
     --unit-tests)
