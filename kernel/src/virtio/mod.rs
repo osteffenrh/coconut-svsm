@@ -4,7 +4,7 @@
 //
 // Author: Oliver Steffen <osteffen@redhat.com>
 
-use core::ptr::NonNull;
+use core::ptr::{addr_of, NonNull};
 
 use virtio_drivers::{
     device::blk::{VirtIOBlk, SECTOR_SIZE},
@@ -15,9 +15,7 @@ use virtio_drivers::{
 };
 
 use crate::{
-    address::PhysAddr,
-    cpu,
-    mm::{alloc::*, page_visibility::*, *},
+    address::{PhysAddr, VirtAddr}, cpu::{self, percpu::this_cpu}, mm::{alloc::*, page_visibility::*, *}
 };
 
 struct SvsmHal;
@@ -107,7 +105,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     }
 
     unsafe fn mmio_read<T: Sized + Copy>(src: &T) -> T {
-        let paddr = PhysAddr::from((src as *const T) as u64);
+        let paddr = this_cpu().get_pgtable().phys_addr(VirtAddr::from(addr_of!(*src))).unwrap();
 
         cpu::percpu::current_ghcb()
             .mmio_read::<T>(paddr)
@@ -115,7 +113,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     }
 
     unsafe fn mmio_write<T: Sized + Copy>(dst: &mut T, v: T) {
-        let paddr = PhysAddr::from((dst as *mut T) as u64);
+        let paddr = this_cpu().get_pgtable().phys_addr(VirtAddr::from(addr_of!(*dst))).unwrap();
 
         cpu::percpu::current_ghcb()
             .mmio_write::<T>(paddr, &v)
@@ -127,8 +125,12 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
 pub fn test_mmio() {
     static MMIO_BASE: u64 = 0xfef03000; // Hard-coded in Qemu
 
+    let paddr = PhysAddr::from(MMIO_BASE);
+    let mem = PerCPUPageMappingGuard::create_4k(paddr).expect("Error mapping MMIO region");
+
+    log::info!("mapped MMIO range {:016x} to vaddr {:016x}", MMIO_BASE, mem.virt_addr());
     // Test code below taken from virtio-drivers aarch64 example.
-    let header = NonNull::new(MMIO_BASE as *mut VirtIOHeader).unwrap();
+    let header = NonNull::new(mem.virt_addr().as_mut_ptr() as *mut VirtIOHeader).unwrap();
     match unsafe { MmioTransport::<SvsmHal>::new(header) } {
         Err(e) => log::warn!(
             "Error creating VirtIO MMIO transport at {:016x}: {}",
