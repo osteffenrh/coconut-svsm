@@ -80,7 +80,7 @@ pub enum SnpReportResponseStatus {
 
 impl SnpReportResponse {
     /// Validate the [SnpReportResponse] fields
-    pub fn validate(&self) -> Result<(), SvsmReqError> {
+    pub fn validate(&self) -> Result<&AttestationReport, SvsmReqError> {
         if self.status != SnpReportResponseStatus::Success as u32 {
             return Err(SvsmReqError::invalid_request());
         }
@@ -89,7 +89,7 @@ impl SnpReportResponse {
             return Err(SvsmReqError::invalid_format());
         }
 
-        Ok(())
+        Ok(&self.report)
     }
 
     pub fn measurement(&self) -> &[u8; 48] {
