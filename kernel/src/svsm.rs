@@ -29,6 +29,7 @@ use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
+use svsm::fs::initialize_blk;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
@@ -451,17 +452,10 @@ pub extern "C" fn svsm_main() {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
 
+    initialize_blk(0xfef03000); // Hard-coded in Qemu
+
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
-
-    {
-        // Virtio drivers experiments
-        svsm::virtio::virtio_init();
-        log::info!("Virtio test trace");
-        use svsm::virtio::test_mmio;
-        test_mmio();
-    }
-
 
     virt_log_usage();
 

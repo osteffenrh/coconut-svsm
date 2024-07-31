@@ -57,7 +57,8 @@ pub fn virtio_init() {
     SHARED_MEM.lock().get_or_init(|| PageStore::new());
 }
 
-struct SvsmHal;
+#[derive(Debug)]
+pub struct SvsmHal;
 
 /// Implementation of virtio-drivers MMIO hardware abstraction for AMD SEV-SNP
 /// in the Coconut-SVSM context. Due to missing #VC handler for MMIO, use ghcb exits
