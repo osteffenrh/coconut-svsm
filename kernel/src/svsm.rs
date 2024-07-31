@@ -33,6 +33,8 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
+#[cfg(feature = "virtio-drivers")]
+use svsm::fs::initialize_blk;
 use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmParams;
@@ -361,6 +363,9 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
         // Nothing to do with data at the moment, simply print a success message.
         log::info!("attestation successful");
     }
+
+    #[cfg(feature = "virtio-drivers")]
+    initialize_blk();
 
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
