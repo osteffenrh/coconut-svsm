@@ -11,12 +11,14 @@ use core::cmp::min;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
 
+use aes_gcm::{aes::cipher::generic_array::GenericArray, aes::cipher::KeyInit, aes::Aes256};
 use postcard;
 use serde::{Deserialize, Serialize};
 use virtio_drivers::{
     device::blk::{VirtIOBlk, SECTOR_SIZE},
     transport::mmio::{MmioTransport, VirtIOHeader},
 };
+use xts_mode::{get_tweak_default, Xts128};
 
 pub trait BlockDriver {
     fn read_blocks(&self, _block_id: usize, _buf: &mut [u8]) -> Result<(), FsError>;
@@ -29,6 +31,32 @@ type VirtIOBlkDevice = VirtIOBlk<SvsmHal, MmioTransport<SvsmHal>>;
 struct VirtIOBlkDriver {
     device: SpinLock<VirtIOBlkDevice>,
     _mem: GlobalRangeGuard,
+    xts: Option<Xts128<Aes256>>,
+}
+
+impl VirtIOBlkDriver {
+    fn new(mmio_base: u64, encryption_key: Option<&[u8; 64]>) -> Self {
+        let paddr = PhysAddr::from(mmio_base);
+        let mem = shared_memory::map_global_range_4k_shared(paddr, PAGE_SIZE, PTEntryFlags::data())
+            .expect("Error mapping MMIO range");
+        let header = NonNull::new(mem.addr().as_mut_ptr() as *mut VirtIOHeader).unwrap();
+        let transport = unsafe { MmioTransport::<SvsmHal>::new(header).unwrap() };
+        let blk: VirtIOBlkDevice = VirtIOBlk::new(transport).expect("Failed to create blk driver");
+
+        let xts = if let Some(key) = encryption_key {
+            let cipher_1 = Aes256::new(GenericArray::from_slice(&key[..32]));
+            let cipher_2 = Aes256::new(GenericArray::from_slice(&key[32..]));
+            Some(Xts128::<Aes256>::new(cipher_1, cipher_2))
+        } else {
+            None
+        };
+
+        VirtIOBlkDriver {
+            device: SpinLock::new(blk),
+            _mem: mem,
+            xts,
+        }
+    }
 }
 
 impl BlockDriver for VirtIOBlkDriver {
@@ -36,14 +64,31 @@ impl BlockDriver for VirtIOBlkDriver {
         self.device
             .lock()
             .read_blocks(block_id, buf)
-            .map_err(|_| FsError::Inval)
+            .map_err(|_| FsError::Inval)?;
+
+        if let Some(xts) = &self.xts {
+            xts.decrypt_area(buf, SECTOR_SIZE, 0, get_tweak_default);
+        }
+
+        Ok(())
     }
 
     fn write_blocks(&self, block_id: usize, buf: &[u8]) -> Result<(), FsError> {
-        self.device
-            .lock()
-            .write_blocks(block_id, buf)
-            .map_err(|_| FsError::Inval)
+        if let Some(xts) = &self.xts {
+            let mut buf_enc = buf.to_vec();
+
+            xts.encrypt_area(&mut buf_enc, SECTOR_SIZE, 0, get_tweak_default);
+
+            self.device
+                .lock()
+                .write_blocks(block_id, &buf_enc)
+                .map_err(|_| FsError::Inval)
+        } else {
+            self.device
+                .lock()
+                .write_blocks(block_id, buf)
+                .map_err(|_| FsError::Inval)
+        }
     }
 
     fn block_size_log2(&self) -> u8 {
@@ -56,19 +101,9 @@ unsafe impl Sync for VirtIOBlkDriver {}
 
 static BLOCK_DEVICE: RWLock<Option<VirtIOBlkDriver>> = RWLock::new(None);
 
-pub fn initialize_blk(mmio_base: u64) {
+pub fn initialize_blk(mmio_base: u64, key: Option<&[u8; 64]>) {
     virtio_init();
-    let paddr = PhysAddr::from(mmio_base);
-    let mem = shared_memory::map_global_range_4k_shared(paddr, PAGE_SIZE, PTEntryFlags::data())
-        .expect("Error mapping MMIO range");
-    let header = NonNull::new(mem.addr().as_mut_ptr() as *mut VirtIOHeader).unwrap();
-    let transport = unsafe { MmioTransport::<SvsmHal>::new(header).unwrap() };
-    let blk: VirtIOBlkDevice = VirtIOBlk::new(transport).expect("Failed to create blk driver");
-
-    *BLOCK_DEVICE.lock_write().deref_mut() = Some(VirtIOBlkDriver {
-        device: SpinLock::new(blk),
-        _mem: mem,
-    });
+    *BLOCK_DEVICE.lock_write().deref_mut() = Some(VirtIOBlkDriver::new(mmio_base, key));
 }
 
 // Code from https://github.com/rcore-os/rcore-fs/blob/master/rcore-fs/src/dev/mod.rs
