@@ -45,6 +45,8 @@ verify_external = { workspace = true, optional = true}
 serde = { workspace = true, features = ["alloc"] }
 postcard = { workspace = true, features = ["alloc"] }
 xts-mode = { version = "=0.5.1", default-features = false }
+# raclients dependecies
+raclients = { workspace = true, features = ["alloc", "in_proxy"], optional = true }
 
 [target."x86_64-unknown-none".dev-dependencies]
 test.workspace = true
@@ -59,6 +61,7 @@ shadow-stacks = []
 verus_all = ["vstd", "builtin", "verify_proof/verus", "verify_external/verus"]
 verus = ["verus_all", "verify_proof/noverify", "verify_external/noverify"]
 noverify = []
+raclients = ["dep:raclients"]
 
 [dev-dependencies]
 
