@@ -29,7 +29,7 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
 
-use zerocopy::{FromZeros, Immutable, IntoBytes};
+use zerocopy::{FromZeros, FromBytes, Immutable, IntoBytes};
 
 #[repr(C, packed)]
 #[derive(Debug, Default, Clone, Copy, IntoBytes, Immutable)]
@@ -97,6 +97,8 @@ enum GHCBExitCode {
     IOIO = 0x7b,
     MSR = 0x7c,
     RDTSCP = 0x87,
+    MMIO_READ = 0x8000_0001,
+    MMIO_WRITE = 0x8000_0002,
     SNP_PSC = 0x8000_0010,
     GUEST_REQUEST = 0x8000_0011,
     GUEST_EXT_REQUEST = 0x8000_0012,
@@ -445,6 +447,54 @@ impl GHCB {
             dst.store(src, Ordering::Relaxed);
         }
         Ok(())
+    }
+
+    fn read_buffer<T>(&self, offset: usize) -> Result<T, GhcbError>
+    where
+        T: FromBytes + Immutable,
+    {
+        let src = &self
+            .buffer
+            .get(offset..)
+            .ok_or(GhcbError::InvalidOffset)?
+            .get(..mem::size_of::<T>()) // size is wrong here (Wrapper!)
+            .ok_or(GhcbError::InvalidOffset)?;
+        Ok(T::read_from_bytes(src).unwrap())
+    }
+
+
+    // !!! Problem with the Wrapper approach: Ih hides the true size of the type.
+    // we need to know it for the vmgexit call
+
+    pub fn mmio_write<T: IntoBytes + Immutable>(
+        &self,
+        pa: PhysAddr,
+        value: &T,
+    ) -> Result<(), SvsmError> {
+        self.clear();
+        self.write_buffer(value, 0)?;
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+        self.vmgexit(
+            GHCBExitCode::MMIO_WRITE,
+            u64::from(pa),
+            value.as_bytes().len() as u64,
+        )?;
+        Ok(())
+    }
+
+    pub fn mmio_read<T: FromBytes + Immutable>(&self, pa: PhysAddr) -> Result<T, SvsmError> {
+        self.clear();
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+        self.vmgexit(
+            GHCBExitCode::MMIO_READ,
+            u64::from(pa),
+            mem::size_of::<T>() as u64,
+        )?;
+        Ok(self.read_buffer::<T>(0)?.clone()) //TODO FIX
     }
 
     pub fn psc_entry(
