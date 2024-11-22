@@ -11,6 +11,7 @@ use core::{
     cell::OnceCell,
     ptr::{addr_of, NonNull},
 };
+use pagetable::PTEntryFlags;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use virtio_drivers::{
@@ -24,6 +25,7 @@ use virtio_drivers::{
 use crate::{
     address::{PhysAddr, VirtAddr},
     cpu::{self, percpu::this_cpu},
+    mm::shared_memory,
     mm::{page_visibility::*, *},
 };
 
@@ -180,15 +182,16 @@ pub fn test_mmio() {
     static MMIO_BASE: u64 = 0xfef03000; // Hard-coded in Qemu
 
     let paddr = PhysAddr::from(MMIO_BASE);
-    let mem = PerCPUPageMappingGuard::create_4k(paddr).expect("Error mapping MMIO region");
+    let mem = shared_memory::map_global_range_4k_shared(paddr, PAGE_SIZE, PTEntryFlags::data())
+        .expect("Error mapping MMIO range");
 
     log::info!(
         "mapped MMIO range {:016x} to vaddr {:016x}",
         MMIO_BASE,
-        mem.virt_addr()
+        mem.addr()
     );
     // Test code below taken from virtio-drivers aarch64 example.
-    let header = NonNull::new(mem.virt_addr().as_mut_ptr() as *mut VirtIOHeader).unwrap();
+    let header = NonNull::new(mem.addr().as_mut_ptr() as *mut VirtIOHeader).unwrap();
     match unsafe { MmioTransport::<SvsmHal>::new(header) } {
         Err(e) => log::warn!(
             "Error creating VirtIO MMIO transport at {:016x}: {}",
