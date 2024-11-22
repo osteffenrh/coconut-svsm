@@ -13,6 +13,7 @@ pub mod page_visibility;
 mod pagebox;
 pub mod pagetable;
 pub mod ptguards;
+pub mod shared_memory;
 pub mod validate;
 pub mod virtualrange;
 pub mod vm;
@@ -28,3 +29,7 @@ pub use pagetable::PageTablePart;
 pub use alloc::{allocate_file_page, PageRef};
 
 pub use mappings::{mmap_kernel, mmap_user, munmap_kernel, munmap_user, VMMappingGuard};
+pub use shared_memory::{
+    map_global_range, map_global_range_2m_private, map_global_range_2m_shared,
+    map_global_range_4k_private, map_global_range_4k_shared, GlobalRangeGuard,
+};
