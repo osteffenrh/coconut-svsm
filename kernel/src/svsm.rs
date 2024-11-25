@@ -467,6 +467,8 @@ pub extern "C" fn svsm_main() {
 
     // Load the encryption key
     let mut key = [0; 64];
+
+    #[cfg(feature = "raclients")]
     // HACK: we are using only first 64 bytes
     key[..64].copy_from_slice(secret.as_bytes());
 
