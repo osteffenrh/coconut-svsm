@@ -42,6 +42,7 @@ pub mod types;
 pub mod utils;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
+pub mod virtio;
 
 #[test]
 fn test_nop() {}
