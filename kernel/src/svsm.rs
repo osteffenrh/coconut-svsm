@@ -456,6 +456,12 @@ pub extern "C" fn svsm_main() {
 
     virt_log_usage();
 
+    {
+        use svsm::block::virtio_blk;
+        static MMIO_BASE: u64 = 0xfef03000;
+        let _blk = virtio_blk::VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
+    }
+
     if config.should_launch_fw() {
         if let Err(e) = launch_fw(&config) {
             panic!("Failed to launch FW: {:#?}", e);
