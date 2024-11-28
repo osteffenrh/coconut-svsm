@@ -337,6 +337,9 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
+    #[cfg(not(test))]
+    svsm::block::virtio_blk_demo::run_demo(&FwCfg::new(SVSM_PLATFORM.get_io_port()));
+
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
 
