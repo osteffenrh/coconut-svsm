@@ -64,12 +64,14 @@ mod tests {
     static MMIO_BASE: u64 = 0xfef03000; // Hard-coded in Qemu
 
     #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     pub fn test_virtio_blk_512() {
         let drv = VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
         readback_test(&drv, 512);
     }
 
     #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     pub fn test_virtio_blk_4096() {
         let drv = VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
         readback_test(&drv, 4096);
