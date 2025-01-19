@@ -36,6 +36,7 @@ packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 virtio-drivers = { git = "https://github.com/osteffenrh/virtio-drivers", branch = "virtio-pr-2" }
+linked_list_allocator = "0.10.5"
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }

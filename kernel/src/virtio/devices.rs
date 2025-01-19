@@ -26,6 +26,7 @@ impl VirtIOBlkDevice {
 
         let mem = map_global_range_4k_shared(mmio_base, PAGE_SIZE, PTEntryFlags::data())
             .expect("Error mapping MMIO range");
+        log::info!("[virtio] Mapped MMIO {:016x} -> {:016x}", mmio_base, mem.addr());
         let header = NonNull::new(mem.addr().as_mut_ptr()).unwrap();
 
         // SAFETY: `header` is the MMIO config area; we have to trust the content is valid.

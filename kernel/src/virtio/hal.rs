@@ -4,10 +4,9 @@
 //
 // Author: Oliver Steffen <osteffen@redhat.com>
 
-extern crate alloc;
 use crate::locking::SpinLock;
-use alloc::vec::Vec;
 use core::{
+    alloc::Layout,
     cell::OnceCell,
     ptr::{addr_of, NonNull},
 };
@@ -19,32 +18,33 @@ use crate::{
     mm::{page_visibility::*, *},
 };
 
-struct PageStore {
-    pages: Vec<(PhysAddr, SharedBox<[u8; PAGE_SIZE]>)>,
+//use linked_list_allocator::Heap;
+
+const SHARED_MEMORY_SIZE: usize = 64 * SIZE_1K;
+
+struct SharedMemory {
+    _mem: SharedBox<[u8; SHARED_MEMORY_SIZE]>,
+    pub allocator: linked_list_allocator::Heap,
 }
 
-impl PageStore {
+impl SharedMemory {
     pub fn new() -> Self {
-        PageStore { pages: Vec::new() }
-    }
-
-    pub fn push(&mut self, pa: PhysAddr, shared_page: SharedBox<[u8; PAGE_SIZE]>) {
-        self.pages.push((pa, shared_page));
-    }
-
-    pub fn pop(&mut self, pa: PhysAddr) -> Option<SharedBox<[u8; PAGE_SIZE]>> {
-        if let Some(p) = self.pages.iter().position(|e| e.0 == pa) {
-            Some(self.pages.remove(p).1)
-        } else {
-            None
+        log::info!("new shared");
+        let mem = SharedBox::<[u8; SHARED_MEMORY_SIZE]>::try_new_zeroed().unwrap();
+        let prt = mem.addr().as_mut_ptr::<u8>();
+        let alloc = unsafe { linked_list_allocator::Heap::new(prt, SHARED_MEMORY_SIZE) };
+        log::info!("new shared alloc");
+        Self {
+            _mem: mem,
+            allocator: alloc,
         }
     }
 }
 
-static SHARED_MEM: SpinLock<OnceCell<PageStore>> = SpinLock::new(OnceCell::new());
+static SHARED_MEM: SpinLock<OnceCell<SharedMemory>> = SpinLock::new(OnceCell::new());
 
 pub fn virtio_init() {
-    SHARED_MEM.lock().get_or_init(PageStore::new);
+    SHARED_MEM.lock().get_or_init(|| SharedMemory::new());
 }
 
 #[derive(Debug)]
@@ -67,15 +67,23 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         // TODO: allow more than one page.
         //       This currently works, becasue in "modern" virtio mode the crate only allocates
         //       one page at a time.
-        assert!(pages == 1);
 
-        let shared_page = SharedBox::<[u8; PAGE_SIZE]>::try_new_zeroed().unwrap();
-        let pa = virt_to_phys(shared_page.addr());
-        let p = NonNull::<u8>::new(shared_page.addr().as_mut_ptr()).unwrap();
+        log::info!("dma_alloc");
+        let layout = Layout::from_size_align(PAGE_SIZE * pages, PAGE_SIZE).unwrap();
+        let m = SHARED_MEM
+            .lock()
+            .get_mut()
+            .unwrap()
+            .allocator
+            .allocate_first_fit(layout)
+            .unwrap();
+        unsafe {
+            m.as_ptr().write_bytes(0, PAGE_SIZE * pages);
+        }
 
-        SHARED_MEM.lock().get_mut().unwrap().push(pa, shared_page);
+        let pa = virt_to_phys(VirtAddr::from(m.as_ptr()));
 
-        (pa.into(), p)
+        (pa.into(), m)
     }
 
     /// Deallocates the given contiguous physical DMA memory pages.
@@ -88,19 +96,20 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ///
     /// Limitation: `pages == 1` required.
     unsafe fn dma_dealloc(
-        paddr: virtio_drivers::PhysAddr,
-        _vaddr: NonNull<u8>,
+        _paddr: virtio_drivers::PhysAddr,
+        vaddr: NonNull<u8>,
         pages: usize,
     ) -> i32 {
-        //TODO: allow more than one page
-        assert!(pages == 1);
-
-        SHARED_MEM
-            .lock()
-            .get_mut()
-            .unwrap()
-            .pop(paddr.into())
-            .unwrap();
+        log::info!("dma_dealloc");
+        let layout = Layout::from_size_align(PAGE_SIZE * pages, PAGE_SIZE).unwrap();
+        unsafe {
+            SHARED_MEM
+                .lock()
+                .get_mut()
+                .unwrap()
+                .allocator
+                .deallocate(vaddr, layout);
+        }
 
         0
     }
@@ -125,23 +134,37 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         direction: virtio_drivers::BufferDirection,
     ) -> virtio_drivers::PhysAddr {
         // TODO: allow more than one page
-        assert!(buffer.len() <= PAGE_SIZE);
 
-        let shared_page = SharedBox::<[u8; PAGE_SIZE]>::try_new_zeroed().unwrap();
+        let layout = Layout::array::<u8>(buffer.len()).unwrap();
+        let mut shared_page = SHARED_MEM
+            .lock()
+            .get_mut()
+            .unwrap()
+            .allocator
+            .allocate_first_fit(layout)
+            .unwrap();
 
         if direction == virtio_drivers::BufferDirection::DriverToDevice {
             let src = buffer.as_ptr().cast::<u8>();
-            let dst = shared_page.addr().as_mut_ptr::<u8>();
+            let dst = unsafe { shared_page.as_mut() };
 
-            // SAFETY: Assume `buffer` is valid because it is supplied by the vritio-drivers crate.
-            //         We assterted that `dst` can hold at least `buffer.len()`.
+            // SAFETY: Assume `buffer` (== `src`) is valid because it is supplied by the vritio-drivers crate.
+            //         `dst` is valid and has the correct size because we allocated it
             unsafe {
                 core::ptr::copy_nonoverlapping(src, dst, buffer.len());
             }
         }
 
-        let pa = virt_to_phys(shared_page.addr());
-        SHARED_MEM.lock().get_mut().unwrap().push(pa, shared_page);
+        let pa = virt_to_phys(VirtAddr::from(shared_page.as_ptr()));
+
+        log::info!(
+            "share   [{:016x} + {:04x}], Layout: {:04x}/{:04x} -> va: {:016x} pa: {:016x}",
+            VirtAddr::from(buffer.as_ptr().cast::<u8>()),
+            buffer.len(),
+            layout.size(), layout.align(),
+            VirtAddr::from(shared_page.as_ptr()),
+            pa
+        );
 
         // return pa of shared page
         pa.into()
@@ -162,28 +185,39 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         buffer: NonNull<[u8]>,
         direction: virtio_drivers::BufferDirection,
     ) {
-        assert!(buffer.len() <= PAGE_SIZE);
+        let p = phys_to_virt(PhysAddr::from(paddr)).as_mut_ptr::<u8>();
+        let shared_page = unsafe { NonNull::<u8>::new_unchecked(p) };
 
-        if let Some(shared_page) = SHARED_MEM.lock().get_mut().unwrap().pop(paddr.into()) {
-            let vaddr = phys_to_virt(paddr.into());
-            let va_from_shared = shared_page.addr();
-            assert!(vaddr == va_from_shared);
+        if direction == virtio_drivers::BufferDirection::DeviceToDriver {
+            let dst = buffer.as_ptr().cast::<u8>();
+            let src = p;
 
-            if direction == virtio_drivers::BufferDirection::DeviceToDriver {
-                let dst = buffer.as_ptr().cast::<u8>();
-                let src = vaddr.as_mut_ptr::<u8>();
-
-                // SAFETY: Assume `buffer` is valid and can hold at leader `buffer.len()`
-                //         because both are supplied by the vritio-drivers crate.
-                //         We assterted that `src` holds at least `buffer.len()`.
-                unsafe {
-                    core::ptr::copy_nonoverlapping(src, dst, buffer.len());
-                }
+            // SAFETY: Assume `buffer` is valid and can hold at leader `buffer.len()`
+            //         because both are supplied by the vritio-drivers crate.
+            //         We assterted that `src` holds at least `buffer.len()`.
+            unsafe {
+                core::ptr::copy_nonoverlapping(src, dst, buffer.len());
             }
-        } else {
-            panic!("unshare: No shared page found at given pa");
         }
-        // implicit drop of share_page here.
+
+        let layout = Layout::array::<u8>(buffer.len()).unwrap();
+        unsafe {
+            SHARED_MEM
+                .lock()
+                .get_mut()
+                .unwrap()
+                .allocator
+                .deallocate(shared_page, layout);
+        }
+
+        log::info!(
+            "unshare [{:016x} + {:04x}], Layout: {:04x}/{:04x} -> va: {:016x} pa: {:016x}",
+            VirtAddr::from(buffer.as_ptr().cast::<u8>()),
+            buffer.len(),
+            layout.size(), layout.align(),
+            VirtAddr::from(shared_page.as_ptr()),
+            PhysAddr::from(paddr)
+        );
     }
 
     /// Performs memory mapped read from location of `src`. `src` itself is not modified,
