@@ -75,11 +75,12 @@ mod tests {
         readback_test(&drv, 4096);
     }
 
-    // #[test]
-    // pub fn test_virtio_blk_8192() {
-    //     let drv = VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
-    //     readback_test(&drv, 8192);
-    // }
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    pub fn test_virtio_blk_8192() {
+        let drv = VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
+        readback_test(&drv, 8192);
+    }
 
     fn readback_test(blk: &VirtIOBlkDriver, block_size: usize) {
         for l in [[0xaa, 0x55], [0x55, 0xaa]] {
