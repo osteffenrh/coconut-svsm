@@ -135,3 +135,149 @@ impl Buffer for UserBuffer {
         self.size
     }
 }
+
+mod tests {
+    use super::SliceMutRefBuffer;
+    use super::SliceRefBuffer;
+    use super::UserBuffer;
+    use crate::address::VirtAddr;
+    use crate::fs::Buffer;
+
+    #[test]
+    fn test_slice_ref_buffer_read_buffer() {
+        let s = [0u8; 100];
+        let sref = SliceRefBuffer::new(&s);
+
+        let mut b = [0u8; 10];
+
+        {
+            let res = sref.read_buffer(&mut b, 0);
+            assert_eq!(res.ok(), Some(b.len()));
+        }
+
+        {
+            let res = sref.read_buffer(&mut b, 95);
+            assert_eq!(res.ok(), Some(5));
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_slice_ref_buffer_read_buffer_invalid_offset_panics() {
+        let s = [0u8; 100];
+        let sref = SliceRefBuffer::new(&s);
+
+        let mut b = [0u8; 10];
+
+        let res = sref.read_buffer(&mut b, 120);
+        assert_eq!(res.ok(), Some(0));
+    }
+
+    #[test]
+    fn test_slice_ref_buffer_size() {
+        let s = [0u8; 100];
+        let sref = SliceRefBuffer::new(&s);
+        assert_eq!(sref.size(), s.len());
+    }
+
+    #[test]
+    fn test_slice_mut_ref_buffer_read_buffer() {
+        let mut s = [0u8; 100];
+        let sref = SliceMutRefBuffer::new(&mut s);
+
+        let mut b = [0u8; 10];
+
+        {
+            let res = sref.read_buffer(&mut b, 0);
+            assert_eq!(res.ok(), Some(b.len()));
+        }
+
+        {
+            let res = sref.read_buffer(&mut b, 95);
+            assert_eq!(res.ok(), Some(5));
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_slice_mut_ref_buffer_read_buffer_invalid_offset_panics() {
+        let mut s = [0u8; 100];
+        let sref = SliceMutRefBuffer::new(&mut s);
+
+        let mut b = [0u8; 10];
+
+        let _ = sref.read_buffer(&mut b, 120);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_slice_mut_ref_buffer_write_buffer_invalid_offset_panics() {
+        let mut s = [0u8; 100];
+        let mut sref = SliceMutRefBuffer::new(&mut s);
+
+        let b = [0u8; 10];
+
+        let _ = sref.write_buffer(&b, 120);
+    }
+
+    #[test]
+    fn test_slice_mut_ref_buffer_size() {
+        let mut s = [0u8; 100];
+        let sref = SliceMutRefBuffer::new(&mut s);
+        assert_eq!(sref.size(), s.len());
+    }
+
+    #[test]
+    fn test_slice_mut_ref_buffer_write_buffer() {
+        let b = [0u8, 1, 2, 3, 4, 5];
+
+        {
+            let mut s = [0u8; 100];
+            let res = {
+                let mut sref = SliceMutRefBuffer::new(&mut s);
+                sref.write_buffer(&b, 0)
+            };
+            assert_eq!(res.ok(), Some(b.len()));
+            assert_eq!(s[..b.len()], b);
+        }
+
+        {
+            let mut s = [0u8; 100];
+            let res = {
+                let mut sref = SliceMutRefBuffer::new(&mut s);
+                sref.write_buffer(&b, 95)
+            };
+            assert_eq!(res.ok(), Some(5));
+            assert_eq!(s[95..], b[..5]);
+        }
+    }
+
+    #[test]
+    fn test_user_buffer_size() {
+        const SIZE: usize = 100;
+        let s = [0u8; SIZE];
+        let test_address = VirtAddr::from(s.as_ptr());
+        let user_buffer = UserBuffer::new(test_address, SIZE);
+        assert_eq!(user_buffer.size(), SIZE);
+    }
+
+    #[test]
+    fn test_user_buffer_read_buffer() {
+        const SIZE: usize = 100;
+        let s = [0u8; SIZE];
+        let test_address = VirtAddr::from(s.as_ptr());
+        let user_buffer = UserBuffer::new(test_address, SIZE);
+
+        let mut b = [0u8; 10];
+
+        {
+            let res = user_buffer.read_buffer(&mut b, 0);
+            assert_eq!(res.ok(), Some(b.len()));
+        }
+
+        {
+            let res = user_buffer.read_buffer(&mut b, 95);
+            assert_eq!(res.ok(), Some(5));
+        }
+    }
+}
