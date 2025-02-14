@@ -337,6 +337,15 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
+    {
+        use svsm::block::virtio_blk;
+        let mmio_base = FwCfg::new(SVSM_PLATFORM.get_io_port())
+            .find_virtio_mmio_address()
+            .unwrap();
+        log::info!("Virtio: Got MMIO base-address from fw_cfg: {mmio_base:016x}");
+        let _blk = virtio_blk::VirtIOBlkDriver::new(PhysAddr::from(mmio_base));
+    }
+
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
 
@@ -344,12 +353,6 @@ pub extern "C" fn svsm_main() {
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
         panic!("Failed to launch FW: {e:#?}");
-    }
-
-    {
-        use svsm::block::virtio_blk;
-        static MMIO_BASE: u64 = 0xfef03000;
-        let _blk = virtio_blk::VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
     }
 
     start_kernel_task(request_processing_main, String::from("request-processing"))

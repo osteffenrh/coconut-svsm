@@ -52,26 +52,30 @@ impl BlockDriver for VirtIOBlkDriver {
 
 #[cfg(test)]
 mod tests {
-    use crate::address::PhysAddr;
+    use crate::{address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM};
     extern crate alloc;
     use alloc::vec::Vec;
     use zerocopy::IntoBytes;
 
     use super::*;
 
-    static MMIO_BASE: u64 = 0xfef03000; // Hard-coded in Qemu
+    fn get_mmio_address() -> u64 {
+        FwCfg::new(SVSM_PLATFORM.get_io_port())
+            .find_virtio_mmio_address()
+            .unwrap()
+    }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     pub fn test_virtio_blk_512() {
-        let drv = VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
+        let drv = VirtIOBlkDriver::new(PhysAddr::from(get_mmio_address()));
         readback_test(&drv, 512);
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     pub fn test_virtio_blk_4096() {
-        let drv = VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
+        let drv = VirtIOBlkDriver::new(PhysAddr::from(get_mmio_address()));
         readback_test(&drv, 4096);
     }
 
