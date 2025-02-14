@@ -15,6 +15,7 @@ use bootlib::kernel_launch::{STAGE2_MAXLEN, STAGE2_START};
 use super::io::IOPort;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::iter;
 use core::mem::size_of;
 
 const FW_CFG_CTL: u16 = 0x510;
@@ -47,6 +48,8 @@ pub enum FwCfgError {
     KernelRegion,
     /// The firmware provided too many files to the guest
     TooManyFiles,
+    /// invalid data format
+    InvalidFormat,
 }
 
 impl From<FwCfgError> for SvsmError {
@@ -113,6 +116,12 @@ impl<'a> FwCfg<'a> {
 
     pub fn read_u8(&self) -> u8 {
         self.driver.inb(FW_CFG_DATA)
+    }
+
+    pub fn read_string(&self) -> String {
+        iter::from_fn(|| Some(self.read_u8() as char))
+            .take_while(|c| *c != '\0')
+            .collect::<String>()
     }
 
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, SvsmError> {
@@ -235,5 +244,16 @@ impl<'a> FwCfg<'a> {
         };
 
         (0..num).map(|_| self.read_memory_region())
+    }
+
+    pub fn find_virtio_mmio_address(&self) -> Result<u64, SvsmError> {
+        let file = self.file_selector("etc/sev/svsm-virtio-mmio0")?;
+        if file.size() > 25 {
+            return Err(SvsmError::FwCfg(FwCfgError::FileSize(file.size)));
+        }
+        self.select(file.selector);
+        u64::from_str_radix(&self.read_string().as_str(), 16)
+            .map_err(|_| SvsmError::FwCfg(FwCfgError::InvalidFormat))
+
     }
 }
