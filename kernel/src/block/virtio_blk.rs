@@ -5,8 +5,9 @@
 // Author: Stefano Garzarella <sgarzare@redhat.com>
 // Author: Oliver Steffen <osteffen@redhat.com>
 
-use super::api::{BlockDeviceError, BlockDriver};
+use super::api::BlockDriver;
 use crate::address::PhysAddr;
+use crate::block::BlockDeviceError;
 use crate::error::SvsmError;
 use crate::virtio::devices::VirtIOBlkDevice;
 use virtio_drivers::device::blk::SECTOR_SIZE;
@@ -27,20 +28,20 @@ impl VirtIOBlkDriver {
 }
 
 impl BlockDriver for VirtIOBlkDriver {
-    fn read_blocks(&self, block_id: usize, buf: &mut [u8]) -> Result<(), BlockDeviceError> {
+    fn read_blocks(&self, block_id: usize, buf: &mut [u8]) -> Result<(), SvsmError> {
         self.0
             .device
             .lock()
             .read_blocks(block_id, buf)
-            .map_err(|_| BlockDeviceError::Failed)
+            .map_err(|_| SvsmError::Block(BlockDeviceError::Failed))
     }
 
-    fn write_blocks(&self, block_id: usize, buf: &[u8]) -> Result<(), BlockDeviceError> {
+    fn write_blocks(&self, block_id: usize, buf: &[u8]) -> Result<(), SvsmError> {
         self.0
             .device
             .lock()
             .write_blocks(block_id, buf)
-            .map_err(|_| BlockDeviceError::Failed)
+            .map_err(|_| SvsmError::Block(BlockDeviceError::Failed))
     }
 
     fn block_size_log2(&self) -> u8 {
