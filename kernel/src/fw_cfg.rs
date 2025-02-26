@@ -11,10 +11,12 @@ use crate::error::SvsmError;
 use crate::mm::pagetable::max_phys_addr;
 use crate::utils::MemoryRegion;
 use bootlib::kernel_launch::{STAGE2_MAXLEN, STAGE2_START};
+use zerocopy::FromBytes;
 
 use super::io::IOPort;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::iter;
 use core::mem::size_of;
 
 const FW_CFG_CTL: u16 = 0x510;
@@ -30,6 +32,27 @@ const KERNEL_REGION_SIZE_MASK: u64 = !(KERNEL_REGION_SIZE - 1);
 const MAX_FW_CFG_FILES: u32 = 0x1000;
 
 //use crate::println;
+
+mod hardware_info {
+    use zerocopy::{FromBytes, Immutable, KnownLayout};
+
+    pub const QEMU_HW_INFO_FILE: &str = "etc/hardware-info";
+
+    pub const TYPE_VIRTIO_MMIO_SVSM: u64 = 99;
+
+    #[derive(FromBytes, Debug, Immutable, KnownLayout)]
+    #[repr(C)]
+    pub struct Header {
+        pub hw_type: u64,
+        pub size: u64,
+    }
+
+    #[derive(FromBytes, Debug, Immutable, KnownLayout)]
+    #[repr(C)]
+    pub struct SimpleDevice {
+        pub mmio_address: u64,
+    }
+}
 
 #[non_exhaustive]
 #[derive(Debug)]
@@ -113,6 +136,13 @@ impl<'a> FwCfg<'a> {
 
     pub fn read_u8(&self) -> u8 {
         self.driver.inb(FW_CFG_DATA)
+    }
+
+    pub fn read<T: FromBytes>(&self) -> T {
+        let buf: Vec<u8> = iter::from_fn(|| Some(self.read_u8()))
+            .take(size_of::<T>())
+            .collect();
+        T::read_from_bytes(buf.as_slice()).unwrap()
     }
 
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, SvsmError> {
@@ -235,5 +265,41 @@ impl<'a> FwCfg<'a> {
         };
 
         (0..num).map(|_| self.read_memory_region())
+    }
+
+    pub fn get_virtio_mmio(&self) -> Result<Vec<u64>, SvsmError> {
+        use hardware_info::*;
+
+        let file = self.file_selector(QEMU_HW_INFO_FILE)?;
+        self.select(file.selector());
+
+        let mut pos: u32 = 0;
+
+        let mut addresses: Vec<u64> = Vec::<u64>::new();
+
+        loop {
+            if pos + size_of::<Header>() as u32 >= file.size() {
+                break;
+            }
+            let header1 = self.read::<Header>();
+            pos += size_of::<Header>() as u32;
+
+            if header1.hw_type == TYPE_VIRTIO_MMIO_SVSM
+                && header1.size == size_of::<SimpleDevice>() as u64
+            {
+                if pos + size_of::<SimpleDevice>() as u32 > file.size() {
+                    break;
+                }
+                let virtio_address = self.read::<SimpleDevice>();
+                pos += size_of::<SimpleDevice>() as u32;
+                addresses.push(virtio_address.mmio_address);
+            } else {
+                for _ in 0..header1.size {
+                    self.read_u8();
+                }
+                pos += header1.size as u32;
+            }
+        }
+        Ok(addresses)
     }
 }
