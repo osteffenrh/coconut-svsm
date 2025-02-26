@@ -186,4 +186,11 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.is_qemu(),
         }
     }
+
+    pub fn virtio_mmio_addresses(&self) -> Result<Vec<u64>, SvsmError> {
+        match self {
+            SvsmConfig::FirmwareConfig(fw_cfg) => fw_cfg.get_virtio_mmio(),
+            SvsmConfig::IgvmConfig(_) => Err(SvsmError::NotSupported),
+        }
+    }
 }
