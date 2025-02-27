@@ -70,6 +70,8 @@ pub enum FwCfgError {
     KernelRegion,
     /// The firmware provided too many files to the guest
     TooManyFiles,
+    /// Invalid Data format
+    InvalidFormat,
 }
 
 impl From<FwCfgError> for SvsmError {
@@ -267,37 +269,40 @@ impl<'a> FwCfg<'a> {
         (0..num).map(|_| self.read_memory_region())
     }
 
+    /// Select a file by name and return a byte iterator that will yeld the contents.
+    /// It will teminate when the end of the file is reached.
+    pub fn select_by_name(
+        &'a self,
+        name: &str,
+    ) -> Result<(impl Iterator<Item = u8> + use<'a>, usize), SvsmError> {
+        let file = self.file_selector(name)?;
+        self.select(file.selector());
+
+        let i = iter::from_fn(|| Some(self.read_u8())).take(file.size() as usize);
+
+        Ok((i, file.size() as usize))
+    }
+
+    /// Try reading an instance of T from the iterator.
+    fn read_from_it<T: FromBytes>(i: &mut impl Iterator<Item = u8>) -> Result<T, FwCfgError> {
+        let buffer: Vec<u8> = i.take(size_of::<T>()).collect();
+        T::read_from_bytes(buffer.as_slice()).map_err(|_| FwCfgError::InvalidFormat)
+    }
+
     pub fn get_virtio_mmio(&self) -> Result<Vec<u64>, SvsmError> {
         use hardware_info::*;
 
-        let file = self.file_selector(QEMU_HW_INFO_FILE)?;
-        self.select(file.selector());
-
-        let mut pos: u32 = 0;
+        let (mut it, _) = self.select_by_name(QEMU_HW_INFO_FILE)?;
 
         let mut addresses: Vec<u64> = Vec::<u64>::new();
 
-        loop {
-            if pos + size_of::<Header>() as u32 >= file.size() {
-                break;
-            }
-            let header1 = self.read::<Header>();
-            pos += size_of::<Header>() as u32;
-
-            if header1.hw_type == TYPE_VIRTIO_MMIO_SVSM
-                && header1.size == size_of::<SimpleDevice>() as u64
-            {
-                if pos + size_of::<SimpleDevice>() as u32 > file.size() {
-                    break;
-                }
-                let virtio_address = self.read::<SimpleDevice>();
-                pos += size_of::<SimpleDevice>() as u32;
-                addresses.push(virtio_address.mmio_address);
+        while let Ok(header) = Self::read_from_it::<Header>(&mut it) {
+            if header.hw_type == TYPE_VIRTIO_MMIO_SVSM {
+                addresses.push(Self::read_from_it::<SimpleDevice>(&mut it)?.mmio_address);
             } else {
-                for _ in 0..header1.size {
-                    self.read_u8();
+                for _ in 0..header.size as usize {
+                    it.next();
                 }
-                pos += header1.size as u32;
             }
         }
         Ok(addresses)
