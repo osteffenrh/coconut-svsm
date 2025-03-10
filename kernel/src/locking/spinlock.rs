@@ -169,6 +169,24 @@ impl<T, I: IrqLocking> RawSpinLock<T, I> {
         }
     }
 
+    /// Execute function F while holding the lock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use svsm::locking::SpinLock;
+    ///
+    /// let spin_lock = SpinLock::new(42);
+    ///
+    /// // Do some actions while holding the lock.
+    /// // Lock is automatically taken and released.
+    /// let value = spin_lock.locked_do(|s| s+= 1; s);
+    /// ```
+    pub fn locked_do<R, F: FnMut(&mut T) -> R>(&self, mut f: F) -> R {
+        let mut l = self.lock();
+        f(&mut (*l))
+    }
+
     /// This method tries to acquire the lock without blocking. If the
     /// lock is not available, it returns `None`. If the lock is
     /// successfully acquired, it returns a [`LockGuard`] that automatically
