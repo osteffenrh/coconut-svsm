@@ -121,6 +121,7 @@ impl<'a> SvsmConfig<'a> {
         }
     }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+        let _ = load_acpi_cpu_info(self.fw_cfg.as_ref().unwrap());
         match &self.igvm_params {
             Some(igvm_params) => igvm_params.load_cpu_info(),
             None => load_acpi_cpu_info(self.fw_cfg.as_ref().unwrap()),
