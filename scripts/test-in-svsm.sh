@@ -42,7 +42,8 @@ test_io $PIPES_DIR/pipe.in $PIPES_DIR/pipe.out &
 TEST_IO_PID=$!
 
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
-    --unit-tests $PIPES_DIR/pipe || true
+  --qemu /home/osteffen/coconut/scenarios/c6/build-qemu-10/bin/qemu-system-x86_64 \
+  --unit-tests $PIPES_DIR/pipe || true
 
 kill $TEST_IO_PID
 rm -rf $PIPES_DIR

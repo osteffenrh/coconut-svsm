@@ -226,7 +226,7 @@ impl ACPITable {
 
 /// ACPI Table Metadata
 /// Metadata associated with an ACPI, information about signature and offset
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct ACPITableMeta {
     /// 4-character signature of the table
     sig: String,
@@ -258,7 +258,7 @@ const MAX_ACPI_TABLES_SIZE: usize = 128 * 1024;
 /// ACPI Table Buffer
 /// A buffer containing ACPI tables. Responsible for loading the tables
 /// from a firmware configuration
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct ACPITableBuffer {
     buf: Vec<u8>,
     /// Collection of metadata for ACPI tables, including signatures
@@ -465,6 +465,15 @@ pub struct ACPICPUInfo {
 /// ```
 pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmError> {
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
+    //let buffer2 = ACPITableBuffer::from_fwcfg(fw_cfg)?;
+    //let buffer3 = ACPITableBuffer::from_fwcfg(fw_cfg)?;
+    //let buffer4 = ACPITableBuffer::from_fwcfg(fw_cfg)?;
+
+    //log::info!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+    //assert_eq!(buffer, buffer2);
+    //assert_eq!(buffer, buffer3);
+    //assert_eq!(buffer, buffer4);
+    //log::info!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
     let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
     let content = apic_table.content().ok_or(SvsmError::Acpi)?;
