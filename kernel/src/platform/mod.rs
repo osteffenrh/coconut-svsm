@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+pub mod capabilities;
 pub mod guest_cpu;
 pub mod native;
 pub mod snp;
@@ -12,6 +13,7 @@ pub mod tdp;
 mod snp_fw;
 pub use snp_fw::{parse_fw_meta_data, SevFWMetaData};
 
+use capabilities::Caps;
 use native::NativePlatform;
 use snp::SnpPlatform;
 use tdp::TdpPlatform;
@@ -26,7 +28,6 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
 use crate::error::SvsmError;
-use crate::hyperv;
 use crate::io::IOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -36,6 +37,7 @@ use bootlib::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 pub static SVSM_PLATFORM: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
+pub static CAPS: ImmutAfterInitCell<Caps> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
 pub struct PageEncryptionMasks {
@@ -115,6 +117,9 @@ pub trait SvsmPlatform {
         determine_cet_support_from_cpuid()
     }
 
+    /// Get the features and the capabilities of the platform.
+    fn capabilities(&self) -> Caps;
+
     /// Obtain CPUID using platform-specific tables.
     fn cpuid(&self, eax: u32) -> Option<CpuidResult>;
 
@@ -179,15 +184,19 @@ pub trait SvsmPlatform {
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
     /// Start an additional processor.
-    fn start_cpu(
-        &self,
-        cpu: &PerCpu,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(), SvsmError>;
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
 
     /// Indicates whether this platform should invoke the SVSM request loop.
     fn start_svsm_request_loop(&self) -> bool {
         false
+    }
+
+    fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
+        todo!()
+    }
+
+    fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
+        todo!()
     }
 }
 
@@ -248,6 +257,11 @@ impl DerefMut for SvsmPlatformCell {
 
 pub fn init_platform_type(platform_type: SvsmPlatformType) {
     SVSM_PLATFORM_TYPE.init(platform_type).unwrap();
+}
+
+pub fn init_capabilities() {
+    let caps = SVSM_PLATFORM.capabilities();
+    CAPS.init(caps).unwrap();
 }
 
 pub fn halt() {
