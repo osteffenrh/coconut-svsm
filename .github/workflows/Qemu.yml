@@ -1,0 +1,244 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Qemu NOCC boot test
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Query coconut-svsm/qemu repo
+        run: |
+          QEMU_SHA=$(git ls-remote --exit-code https://github.com/coconut-svsm/qemu.git svsm-igvm | cut -f 1)
+          echo "QEMU_SHA=${QEMU_SHA}" >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      # Workaround for actions-rs/toolchain@v1 actually installing
+      # the requested versions.
+      - name: Remove rust-toolchain.toml
+        run: rm rust-toolchain.toml
+
+      - name: Get Qemu form cache
+        id: qemu_cache
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-${{ env.QEMU_SHA }}
+
+      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
+        name: Install Rust x86_64-unknown-linux-gnu
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: '1.86.0'
+            target: x86_64-unknown-linux-gnu
+            profile: minimal
+            override: false
+            default: true
+
+      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
+        name: Install cbindgen
+        run: cargo install cbindgen
+
+      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
+        name: Enable source repositories
+        run: |
+          sudo sed -i 's/^Types: deb/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+
+      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
+        name: Build Qemu
+        run: |
+          # Update & install dependencies
+          sudo apt-get install --yes git curl libcunit1-dev
+          sudo apt-get build-dep --yes qemu
+
+          OUT=$PWD/tools
+          mkdir -p "$OUT"
+
+          mkdir -p ../scratch
+          pushd ../scratch
+
+          # Build IGVM
+          git clone https://github.com/microsoft/igvm.git \
+            --branch=main \
+            --single-branch \
+            --depth=1
+
+          pushd igvm
+          PREFIX="$OUT" make -C igvm_c
+          PREFIX="$OUT" make -C igvm_c install
+          popd
+
+          # Build Qmeu
+          git clone https://github.com/coconut-svsm/qemu.git \
+            --branch=svsm-igvm \
+            --single-branch \
+            --depth=1
+
+          pushd qemu
+          PKG_CONFIG_PATH="$OUT/lib64/pkgconfig" ./configure \
+            --disable-docs --disable-user --target-list=x86_64-softmmu \
+            --enable-igvm --extra-ldflags=-L"$OUT/lib64" \
+            --extra-cflags=-I"$OUT/include" \
+            --disable-af-xdp \
+            --disable-alsa \
+            --disable-attr \
+            --disable-auth-pam \
+            --disable-blkio \
+            --disable-bochs \
+            --disable-bpf \
+            --disable-brlapi \
+            --disable-bsd-user \
+            --disable-bzip2 \
+            --disable-canokey \
+            --disable-cap-ng \
+            --disable-cloop \
+            --disable-cocoa \
+            --disable-colo-proxy \
+            --disable-coreaudio \
+            --disable-crypto-afalg \
+            --disable-curl \
+            --disable-curses \
+            --disable-dbus-display \
+            --disable-dmg \
+            --disable-docs \
+            --disable-dsound \
+            --disable-fuse \
+            --disable-fuse-lseek \
+            --disable-gcrypt \
+            --disable-gettext \
+            --disable-gio \
+            --disable-glusterfs \
+            --disable-gnutls \
+            --disable-gtk \
+            --disable-gtk-clipboard \
+            --disable-guest-agent \
+            --disable-guest-agent-msi \
+            --disable-hv-balloon \
+            --disable-hvf \
+            --disable-iconv \
+            --disable-install-blobs \
+            --disable-jack \
+            --disable-keyring \
+            --disable-l2tpv3 \
+            --disable-libdaxctl \
+            --disable-libdw \
+            --disable-libiscsi \
+            --disable-libkeyutils \
+            --disable-libnfs \
+            --disable-libpmem \
+            --disable-libssh \
+            --disable-libudev \
+            --disable-libusb \
+            --disable-libvduse \
+            --disable-linux-user \
+            --disable-lzfse \
+            --disable-lzo \
+            --disable-netmap \
+            --disable-nettle \
+            --disable-numa \
+            --disable-nvmm \
+            --disable-opengl \
+            --disable-oss \
+            --disable-pa \
+            --disable-parallels \
+            --disable-pipewire \
+            --disable-pixman \
+            --disable-plugins \
+            --disable-png \
+            --disable-qatzip \
+            --disable-qcow1 \
+            --disable-qed \
+            --disable-qga-vss \
+            --disable-qpl \
+            --disable-rbd \
+            --disable-rdma \
+            --disable-replication \
+            --disable-rutabaga-gfx \
+            --disable-sdl \
+            --disable-sdl-image \
+            --disable-seccomp \
+            --disable-selinux \
+            --disable-slirp \
+            --disable-slirp-smbd \
+            --disable-smartcard \
+            --disable-snappy \
+            --disable-sndio \
+            --disable-sparse \
+            --disable-spice \
+            --disable-spice-protocol \
+            --disable-tools \
+            --disable-tpm \
+            --disable-u2f \
+            --disable-uadk \
+            --disable-usb-redir \
+            --disable-user \
+            --disable-vde \
+            --disable-vdi \
+            --disable-vduse-blk-export \
+            --disable-vfio-user-server \
+            --disable-vhdx \
+            --disable-vhost-crypto \
+            --disable-vhost-kernel \
+            --disable-vhost-net \
+            --disable-vhost-user \
+            --disable-vhost-user-blk-server \
+            --disable-vhost-vdpa \
+            --disable-virglrenderer \
+            --disable-virtfs \
+            --disable-virtfs-proxy-helper \
+            --disable-vmdk \
+            --disable-vmnet \
+            --disable-vnc \
+            --disable-vnc-jpeg \
+            --disable-vnc-sasl \
+            --disable-vpc \
+            --disable-vte \
+            --disable-vvfat \
+            --disable-whpx \
+            --disable-xen \
+            --disable-xen-pci-passthrough \
+            --disable-xkbcommon \
+            --disable-zstd \
+            --enable-strip \
+            --static \
+            --prefix="$OUT"
+          make -j "$(nproc)" install
+          popd
+
+          popd
+
+      ## TODO: replace rebuild by a artifact download ?
+      - name: Install Rust x86_64-unknown-none
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: '1.86.0'
+            target: x86_64-unknown-none
+            profile: minimal
+            override: true
+
+      - name: Install TPM 2.0 Reference Implementation build dependencies
+        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
+
+
+      - name: Build SVSM
+        run: ./build configs/qemu-target.json
+
+      ########################
+
+      - name: Run SVSM in Qemu
+        run: bash .github/workflows/qemu_nocc_boot.sh
+
