@@ -37,16 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools
-          key: tools-${{ env.QEMU_SHA }}-${{ env.RUST_VERSION_IGVM }}-${{ env.IGVM_REF }}
-
-      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
-        name: Install Rust x86_64-unknown-linux-gnu
-        run: rustup toolchain install "${{ env.RUST_VERSION_IGVM }}" --target x86_64-unknown-linux-gnu --profile minimal
-
-      # Currently needed for the C wrapper of IGVM
-      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
-        name: Install cbindgen
-        run: cargo install cbindgen
+          key: qemu-${{ env.QEMU_SHA }}--rust-${{ env.RUST_VERSION_IGVM }}--igvm-${{ env.IGVM_REF }}
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Enable Ubuntu source repositories
@@ -59,13 +50,13 @@ jobs:
         run: |
           # Update & install dependencies
           sudo apt-get install --yes git curl libcunit1-dev
-
           # TODO: Find a minimal set of dependencies to install
           sudo apt-get build-dep --yes qemu
 
           OUT="$PWD/tools"
           mkdir -p "$OUT"
 
+          # Set up a build directory outside the coconut-svsm checkout
           mkdir -p ../scratch
           pushd ../scratch
 
@@ -75,6 +66,15 @@ jobs:
             --depth=1
 
           pushd igvm
+
+          # Installing Rust toolchain and tools from within this workflow step in in the
+          # igvm checkout directory to avoid interference of the coconut-svsm rust-toolchain.toml,
+          # which might override versions and target settings.
+          rustup toolchain install "${{ env.RUST_VERSION_IGVM }}" --target x86_64-unknown-linux-gnu --profile minimal
+
+          # Currently needed for the C wrapper of IGVM
+          cargo install cbindgen
+
           PREFIX="$OUT" make -C igvm_c
           PREFIX="$OUT" make -C igvm_c install
           popd
@@ -110,11 +110,8 @@ jobs:
           rustup toolchain install \
             --profile minimal
 
-      #TODO: install rust-src ?
-
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
-
 
       - name: Build SVSM
         run: ./build configs/qemu-target.json
