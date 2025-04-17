@@ -9,20 +9,10 @@ TIMEOUT=4s
 exec 3>&1
 
 run_svsm() {
-
-  ./tools/bin/qemu-system-x86_64 \
-    -cpu max,smep=on \
-    -machine q35,confidential-guest-support=cgs0,memory-backend=mem0,igvm-cfg=igvm0,accel=tcg \
-    -object memory-backend-memfd,size=1G,id=mem0,share=true,prealloc=false,reserve=false \
-    -object igvm-cfg,id=igvm0,file=bin/coconut-qemu.igvm \
-    -object nocc,id=cgs0 \
-    -smp 4 \
-    -no-reboot \
-    -net none \
-    -vga none \
-    -nographic \
-    -monitor none \
-    -serial stdio | tee /proc/self/fd/3
+  scripts/launch_guest.sh \
+    --qemu ./tools/bin/qemu-system-x86_64 \
+    --nocc |
+    tee /proc/self/fd/3
 }
 
 echo "================================================================================"

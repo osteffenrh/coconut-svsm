@@ -8,8 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # IGVM C wrapper might require a different Rust version than SVSM
   RUST_VERSION_IGVM: 1.84.1
-  RUST_VERSION_SVSM: 1.84.1
   QEMU_REPO: https://github.com/coconut-svsm/qemu.git
   QEMU_REF: svsm-igvm
   IGVM_REPO: https://github.com/microsoft/igvm.git
@@ -41,10 +41,11 @@ jobs:
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Install Rust x86_64-unknown-linux-gnu
-        run: rustup toolchain install "$RUST_VERSION_IGVM" \
+        run: rustup toolchain install "${{ env.RUST_VERSION_IGVM }}" \
                --target x86_64-unknown-linux-gnu \
                --profile minimal
 
+      # Currently needed for the C wrapper of IGVM
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Install cbindgen
         run: cargo install cbindgen
@@ -71,8 +72,8 @@ jobs:
           pushd ../scratch
 
           # Build IGVM
-          git clone "$IGVM_REPO" \
-            --branch="$IGVM_REF" \
+          git clone "${{ env.IGVM_REPO }}" \
+            --branch="${{ env.IGVM_REF }}" \
             --depth=1
 
           pushd igvm
@@ -81,8 +82,8 @@ jobs:
           popd
 
           # Build Qmeu
-          git clone "$QEMU_REPO" \
-            --branch="$QEMU_REF" \
+           git clone "${{ env.QEMU_REPO }}" \
+            --branch="${{ env.QEMU_REF }}" \
             --depth=1
 
           pushd qemu
@@ -92,6 +93,7 @@ jobs:
             --extra-cflags=-I"$OUT/include" \
             --enable-tcg \
             --enable-kvm \
+            --enable-slirp \
             --enable-strip \
             --static \
             --disable-docs \
@@ -107,10 +109,10 @@ jobs:
 
       - name: Install Rust x86_64-unknown-none
         run: |
-          rustup toolchain install "$RUST_VERSION_SVSM" \
-            --target x86_64-unknown-none \
+          rustup toolchain install \
             --profile minimal
-          rustup toolchain override set "$RUST_VERSION_SVSM"
+
+      #TODO: install rust-src ?
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
