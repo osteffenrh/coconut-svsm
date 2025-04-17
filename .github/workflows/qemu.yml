@@ -8,6 +8,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_VERSION_IGVM: 1.84.1
+  RUST_VERSION_SVSM: 1.84.1
+  QEMU_REPO: https://github.com/coconut-svsm/qemu.git
+  QEMU_REF: svsm-igvm
+  IGVM_REPO: https://github.com/microsoft/igvm.git
+  IGVM_REF: igvm-v0.3.4
 
 jobs:
   check:
@@ -17,7 +23,7 @@ jobs:
 
       - name: Query coconut-svsm/qemu repo
         run: |
-          QEMU_SHA=$(git ls-remote --exit-code https://github.com/coconut-svsm/qemu.git svsm-igvm | cut -f 1)
+          QEMU_SHA=$(git ls-remote "$QEMU_REPO" --exit-code "$QEMU_REF" | cut -f 1)
           echo "QEMU_SHA=${QEMU_SHA}" >> "$GITHUB_ENV"
 
       - name: Checkout
@@ -26,34 +32,25 @@ jobs:
           submodules: true
           fetch-depth: 1
 
-      # Workaround for actions-rs/toolchain@v1 actually installing
-      # the requested versions.
-      - name: Remove rust-toolchain.toml
-        run: rm rust-toolchain.toml
-
       - name: Get QEMU form cache
         id: qemu_cache
         uses: actions/cache@v4
         with:
           path: tools
-          key: tools-${{ env.QEMU_SHA }}
+          key: tools-${{ env.QEMU_SHA }}-${{ env.RUST_VERSION_IGVM }}-${{ env.IGVM_REF }}
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Install Rust x86_64-unknown-linux-gnu
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: '1.86.0'
-            target: x86_64-unknown-linux-gnu
-            profile: minimal
-            override: false
-            default: true
+        run: rustup toolchain install "$RUST_VERSION_IGVM" \
+               --target x86_64-unknown-linux-gnu \
+               --profile minimal
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Install cbindgen
         run: cargo install cbindgen
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
-        name: Enable source repositories
+        name: Enable Ubuntu source repositories
         run: |
           sudo sed -i 's/^Types: deb/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get update
@@ -63,18 +60,19 @@ jobs:
         run: |
           # Update & install dependencies
           sudo apt-get install --yes git curl libcunit1-dev
+
+          # TODO: Find a minimal set of dependencies to install
           sudo apt-get build-dep --yes qemu
 
-          OUT=$PWD/tools
+          OUT="$PWD/tools"
           mkdir -p "$OUT"
 
           mkdir -p ../scratch
           pushd ../scratch
 
           # Build IGVM
-          git clone https://github.com/microsoft/igvm.git \
-            --branch=main \
-            --single-branch \
+          git clone "$IGVM_REPO" \
+            --branch="$IGVM_REF" \
             --depth=1
 
           pushd igvm
@@ -83,9 +81,8 @@ jobs:
           popd
 
           # Build Qmeu
-          git clone https://github.com/coconut-svsm/qemu.git \
-            --branch=svsm-igvm \
-            --single-branch \
+          git clone "$QEMU_REPO" \
+            --branch="$QEMU_REF" \
             --depth=1
 
           pushd qemu
@@ -107,13 +104,13 @@ jobs:
           popd
 
       ## TODO: replace rebuild by a artifact download ?
+
       - name: Install Rust x86_64-unknown-none
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: '1.86.0'
-            target: x86_64-unknown-none
-            profile: minimal
-            override: true
+        run: |
+          rustup toolchain install "$RUST_VERSION_SVSM" \
+            --target x86_64-unknown-none \
+            --profile minimal
+          rustup toolchain override set "$RUST_VERSION_SVSM"
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
