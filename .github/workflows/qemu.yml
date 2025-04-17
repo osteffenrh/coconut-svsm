@@ -41,9 +41,7 @@ jobs:
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Install Rust x86_64-unknown-linux-gnu
-        run: rustup toolchain toolchain install "${{ env.RUST_VERSION_IGVM }}" \
-               --target x86_64-unknown-linux-gnu \
-               --profile minimal
+        run: rustup toolchain install "${{ env.RUST_VERSION_IGVM }}" --target x86_64-unknown-linux-gnu --profile minimal
 
       # Currently needed for the C wrapper of IGVM
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
