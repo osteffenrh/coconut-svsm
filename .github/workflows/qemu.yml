@@ -11,7 +11,7 @@ env:
 
 jobs:
   check:
-    name: Qemu NOCC boot test
+    name: QEMU NOCC boot test
     runs-on: ubuntu-latest
     steps:
 
@@ -31,7 +31,7 @@ jobs:
       - name: Remove rust-toolchain.toml
         run: rm rust-toolchain.toml
 
-      - name: Get Qemu form cache
+      - name: Get QEMU form cache
         id: qemu_cache
         uses: actions/cache@v4
         with:
@@ -59,7 +59,7 @@ jobs:
           sudo apt-get update
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
-        name: Build Qemu
+        name: Build QEMU
         run: |
           # Update & install dependencies
           sudo apt-get install --yes git curl libcunit1-dev
@@ -124,6 +124,6 @@ jobs:
 
       ########################
 
-      - name: Run SVSM in Qemu
+      - name: Run SVSM in QEMU
         run: bash .github/workflows/qemu_nocc_boot.sh
 
