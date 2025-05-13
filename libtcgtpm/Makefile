@@ -50,14 +50,17 @@ $(OPENSSL_MAKEFILE):
 			SVSM \
 			disable-legacy \
 			no-afalgeng \
+			no-apps \
 			no-aria \
 			no-asm \
 			no-async \
 			no-atexit \
+			no-autoalginit \
 			no-autoerrinit \
 			no-autoload-config \
 			no-bf \
 			no-blake2 \
+			no-cached-fetch \
 			no-capieng \
 			no-cast \
 			no-chacha \
@@ -89,9 +92,13 @@ $(OPENSSL_MAKEFILE):
 			no-hw \
 			no-idea \
 			no-ktls \
+			no-legacy \
 			no-makedepend \
+			no-md2 \
 			no-md4 \
 			no-mdc2 \
+			no-ml-dsa \
+			no-ml-kem \
 			no-module \
 			no-multiblock \
 			no-nextprotoneg \
@@ -108,10 +115,12 @@ $(OPENSSL_MAKEFILE):
 			no-rfc3779 \
 			no-rmd160 \
 			no-scrypt \
+			no-sctp \
 			no-seed \
 			no-shared \
 			no-siphash \
 			no-siv \
+			no-slh-dsa \
 			no-sm2 \
 			no-sm2-precomp  \
 			no-sm4 \
@@ -120,6 +129,7 @@ $(OPENSSL_MAKEFILE):
 			no-srtp \
 			no-sse2 \
 			no-ssl \
+			no-ssl3 \
 			no-ssl3-method \
 			no-ssl-trace \
 			no-static-engine \
@@ -127,6 +137,7 @@ $(OPENSSL_MAKEFILE):
 			no-tests \
 			no-thread-pool \
 			no-threads \
+			no-tls \
 			no-tls1 \
 			no-tls1_1 \
 			no-tls1_1-method \
@@ -135,6 +146,7 @@ $(OPENSSL_MAKEFILE):
 			no-tls1_3 \
 			no-tls1-method \
 			no-ts \
+			no-ui \
 			no-ui-console \
 			no-uplink \
 			no-whirlpool \
