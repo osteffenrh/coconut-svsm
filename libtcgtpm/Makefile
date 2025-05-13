@@ -55,6 +55,7 @@ $(OPENSSL_MAKEFILE):
 			no-async \
 			no-autoerrinit \
 			no-autoload-config \
+			no-atexit \
 			no-bf \
 			no-blake2 \
 			no-capieng \
@@ -67,9 +68,12 @@ $(OPENSSL_MAKEFILE):
 			no-deprecated \
 			no-des \
 			no-dgram \
+			no-docs \
 			no-dsa \
 			no-dso \
 			no-dtls \
+			no-dtls1 \
+			no-dtls1_2 \
 			no-dtls1_2-method \
 			no-dtls1-method \
 			no-dynamic-engine \
@@ -114,11 +118,25 @@ $(OPENSSL_MAKEFILE):
 			no-ssl-trace \
 			no-static-engine \
 			no-stdio \
+			no-tests \
+			no-thread-pool \
 			no-threads \
+			no-tls1 \
+			no-tls1_1 \
+			no-tls1_1-method \
+			no-tls1_2 \
+			no-tls1_2-method \
 			no-tls1_3 \
+			no-tls1-method \
 			no-ts \
+			no-ecx  \
+			no-http  \
+			no-sm2-precomp  \
 			no-ui-console \
 			no-whirlpool \
+			no-egd \
+			no-quic \
+			no-uplink \
 			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
 			-I$(LIBCRT_DIR)/include \
