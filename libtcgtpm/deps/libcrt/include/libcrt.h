@@ -64,6 +64,14 @@
 
 #include <bits/alltypes.h>
 
+typedef signed char INT8;
+typedef unsigned char UINT8;
+typedef int INT32;
+typedef unsigned int UINT32;
+typedef signed long INT64;
+typedef unsigned long UINT64;
+typedef UINT64 UINTN;
+typedef INT64 INTN;
 // errno.h
 
 extern int errno;
