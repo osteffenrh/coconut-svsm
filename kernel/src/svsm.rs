@@ -353,11 +353,24 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
-    #[cfg(feature = "attest")]
+    //log::debug!("poll finished");
     {
-        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
-        let secret = proxy.attest().unwrap();
-        log::info!("attestation successful");
+        let secret = {
+            use alloc::vec;
+            use cocoon_tpm_utils_common::zeroize::Zeroizing;
+            #[cfg(feature = "attest")]
+            {
+                let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
+                let secret = proxy.attest().unwrap();
+                log::info!("attestation successful");
+                secret
+            }
+            #[cfg(not(feature = "attest"))]
+            {
+                log::info!("Attestation is disabled; using zero key for storge.");
+                Zeroizing::new(vec![0u8; 64])
+            }
+        };
 
         #[cfg(not(feature = "cocoonfs"))]
         let _ = secret;
