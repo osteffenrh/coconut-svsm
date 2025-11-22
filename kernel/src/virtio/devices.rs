@@ -38,23 +38,16 @@ pub static MMIO_SLOTS: RWLock<Option<Vec<MMIOSlot>>> = RWLock::new(None);
 pub fn virtio_mmio_init() {
     let cfg: FwCfg<'_> = FwCfg::new(SVSM_PLATFORM.get_io_port());
 
-    let driver = cfg.get_virtio_mmio_addresses();
-    if driver.is_err() {
+    if let Ok(driver) = cfg.get_virtio_mmio_addresses() {
+        let mmio_slots_vec: Vec<MMIOSlot> = driver
+            .iter()
+            .map(|address| MMIOSlot::new(PhysAddr::from(*address)))
+            .collect();
+
+        *MMIO_SLOTS.lock_write().deref_mut() = Some(mmio_slots_vec);
+    } else {
         log::info!("No MMIO slots found");
-        return;
     }
-
-    let mut mmio_slots_vec: Vec<MMIOSlot> = Vec::new();
-
-    driver.unwrap().iter().for_each(|address| {
-        let entry = MMIOSlot {
-            free: true,
-            addr: PhysAddr::from(*address),
-        };
-        mmio_slots_vec.push(entry);
-    });
-
-    *MMIO_SLOTS.lock_write().deref_mut() = Some(mmio_slots_vec);
 }
 
 pub struct VirtIOBlkDevice {

@@ -23,26 +23,20 @@ impl core::fmt::Debug for VirtIOVsockDriver {
 }
 
 pub fn initialize_vsock() {
-    let mut binding = MMIO_SLOTS.lock_write();
-    let slots = binding.as_deref_mut();
-    if slots.is_none() {
-        return;
-    }
+    let driver = MMIO_SLOTS.lock_write().as_deref_mut().and_then(|slots| {
+        slots
+            .iter_mut()
+            .filter(|slot| slot.free)
+            .find_map(|slot| VirtIOVsockDriver::new(slot).ok())
+    });
 
-    let driver = slots
-        .unwrap()
-        .iter_mut()
-        .filter(|slot| slot.free)
-        .find_map(|slot| VirtIOVsockDriver::new(slot).ok());
-
-    if driver.is_none() {
+    if let Some(driver) = driver {
+        VSOCK_DEVICE
+            .init(Box::new(driver))
+            .expect("vsock driver already initialized");
+    } else {
         log::info!("virtio-vsock device not found");
-        return;
     }
-
-    VSOCK_DEVICE
-        .init(Box::new(driver.unwrap()))
-        .expect("vsock driver already initialized");
 }
 
 impl VirtIOVsockDriver {
