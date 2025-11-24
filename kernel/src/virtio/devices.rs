@@ -29,10 +29,44 @@ use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub struct MMIOSlot {
-    pub free: bool,
-    pub addr: PhysAddr,
+    free: bool,
+    addr: PhysAddr,
 }
 
+impl MMIOSlot {
+    pub fn new(addr: PhysAddr) -> Self {
+        Self { free: true, addr }
+    }
+    pub fn try_lock(&mut self) -> Option<MMIOSlotGuard> {
+        self.free.then_some({
+            self.free = false;
+            MMIOSlotGuard { addr: self.addr }
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct MMIOSlotGuard {
+    addr: PhysAddr,
+}
+
+impl MMIOSlotGuard {
+    pub fn get_addr(&self) -> PhysAddr {
+        self.addr
+    }
+}
+
+impl Drop for MMIOSlotGuard {
+    fn drop(&mut self) {
+        if let Some(slot) = MMIO_SLOTS
+            .lock_write()
+            .as_mut()
+            .and_then(|slots| slots.iter_mut().find(|slot| slot.addr == self.addr))
+        {
+            slot.free = false;
+        }
+    }
+}
 pub static MMIO_SLOTS: RWLock<Option<Vec<MMIOSlot>>> = RWLock::new(None);
 
 pub fn virtio_mmio_init() {
@@ -53,7 +87,7 @@ pub fn virtio_mmio_init() {
 pub struct VirtIOBlkDevice {
     pub device: SpinLock<VirtIOBlk<SvsmHal, MmioTransport<SvsmHal>>>,
     _mmio_space: GlobalRangeGuard,
-    phys_addr: PhysAddr,
+    _slot: MMIOSlotGuard,
 }
 
 impl core::fmt::Debug for VirtIOBlkDevice {
@@ -63,10 +97,10 @@ impl core::fmt::Debug for VirtIOBlkDevice {
 }
 
 impl VirtIOBlkDevice {
-    pub fn new(slot: &mut MMIOSlot) -> Result<Box<Self>, SvsmError> {
+    pub fn new(slot: MMIOSlotGuard) -> Result<Box<Self>, SvsmError> {
         virtio_init();
 
-        let mem = map_global_range_4k_shared(slot.addr, PAGE_SIZE, PTEntryFlags::data())?;
+        let mem = map_global_range_4k_shared(slot.get_addr(), PAGE_SIZE, PTEntryFlags::data())?;
 
         // Not expected to fail, because mem exists.
         let header = NonNull::new(mem.addr().as_mut_ptr()).unwrap();
@@ -87,25 +121,11 @@ impl VirtIOBlkDevice {
 
         let blk = VirtIOBlk::new(transport).map_err(|_| VirtioError::InvalidDevice)?;
 
-        slot.free = false;
-
         Ok(Box::new(VirtIOBlkDevice {
             device: SpinLock::new(blk),
             _mmio_space: mem,
-            phys_addr: slot.addr,
+            _slot: slot,
         }))
-    }
-}
-impl Drop for VirtIOBlkDevice {
-    fn drop(&mut self) {
-        let mut binding = MMIO_SLOTS.lock_write();
-        let slots = binding.as_mut().unwrap();
-
-        let slot = slots
-            .iter_mut()
-            .find(|slot| slot.addr == self.phys_addr)
-            .unwrap();
-        slot.free = true;
     }
 }
 
@@ -113,7 +133,7 @@ pub struct VirtIOVsockDevice {
     pub device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<SvsmHal>>>,
     pub first_free_port: AtomicU32,
     _mmio_space: GlobalRangeGuard,
-    phys_addr: PhysAddr,
+    _slot: MMIOSlotGuard,
 }
 
 impl core::fmt::Debug for VirtIOVsockDevice {
@@ -123,10 +143,10 @@ impl core::fmt::Debug for VirtIOVsockDevice {
 }
 
 impl VirtIOVsockDevice {
-    pub fn new(slot: &mut MMIOSlot) -> Result<Box<Self>, SvsmError> {
+    pub fn new(slot: MMIOSlotGuard) -> Result<Box<Self>, SvsmError> {
         virtio_init();
 
-        let mem = map_global_range_4k_shared(slot.addr, PAGE_SIZE, PTEntryFlags::data())?;
+        let mem = map_global_range_4k_shared(slot.get_addr(), PAGE_SIZE, PTEntryFlags::data())?;
 
         // Not expected to fail, because mem exists.
         let header = NonNull::new(mem.addr().as_mut_ptr()).unwrap();
@@ -148,26 +168,11 @@ impl VirtIOVsockDevice {
         let vsk = VirtIOSocket::new(transport).map_err(|_| VirtioError::InvalidDevice)?;
         let mgr = VsockConnectionManager::new(vsk);
 
-        slot.free = false;
-
         Ok(Box::new(VirtIOVsockDevice {
             device: SpinLock::new(mgr),
             first_free_port: AtomicU32::new(1024),
             _mmio_space: mem,
-            phys_addr: slot.addr,
+            _slot: slot,
         }))
-    }
-}
-
-impl Drop for VirtIOVsockDevice {
-    fn drop(&mut self) {
-        let mut binding = MMIO_SLOTS.lock_write();
-        let slots = binding.as_mut().unwrap();
-
-        let slot = slots
-            .iter_mut()
-            .find(|slot| slot.addr == self.phys_addr)
-            .unwrap();
-        slot.free = true;
     }
 }

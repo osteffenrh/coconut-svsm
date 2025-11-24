@@ -9,7 +9,7 @@ use super::api::BlockDriver;
 use crate::block::BlockDeviceError;
 use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
-use crate::virtio::devices::{MMIOSlot, VirtIOBlkDevice};
+use crate::virtio::devices::{MMIOSlotGuard, VirtIOBlkDevice};
 use virtio_drivers::device::blk::SECTOR_SIZE;
 extern crate alloc;
 use alloc::boxed::Box;
@@ -22,7 +22,7 @@ impl core::fmt::Debug for VirtIOBlkDriver {
 }
 
 impl VirtIOBlkDriver {
-    pub fn new(slot: &mut MMIOSlot) -> Result<Self, SvsmError> {
+    pub fn new(slot: MMIOSlotGuard) -> Result<Self, SvsmError> {
         Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?))
     }
 }
@@ -82,8 +82,7 @@ mod tests {
         slots
             .unwrap()
             .iter_mut()
-            .filter(|slot| slot.free)
-            .find_map(|slot| VirtIOBlkDriver::new(slot).ok())
+            .find_map(|slot| slot.try_lock().and_then(|x| VirtIOBlkDriver::new(x).ok()))
             .expect("No virtio-blk device found")
     }
 

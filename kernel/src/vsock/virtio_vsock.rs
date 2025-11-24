@@ -10,7 +10,7 @@ use crate::error::SvsmError;
 use crate::vsock::api::VsockDriver;
 use crate::vsock::{VsockError, VSOCK_DEVICE};
 extern crate alloc;
-use crate::virtio::devices::{MMIOSlot, VirtIOVsockDevice, MMIO_SLOTS};
+use crate::virtio::devices::{MMIOSlotGuard, VirtIOVsockDevice, MMIO_SLOTS};
 use alloc::boxed::Box;
 
 use virtio_drivers::device::socket::{ConnectionStatus, VsockAddr};
@@ -26,8 +26,7 @@ pub fn initialize_vsock() {
     let driver = MMIO_SLOTS.lock_write().as_deref_mut().and_then(|slots| {
         slots
             .iter_mut()
-            .filter(|slot| slot.free)
-            .find_map(|slot| VirtIOVsockDriver::new(slot).ok())
+            .find_map(|slot| slot.try_lock().and_then(|x| VirtIOVsockDriver::new(x).ok()))
     });
 
     if let Some(driver) = driver {
@@ -40,7 +39,7 @@ pub fn initialize_vsock() {
 }
 
 impl VirtIOVsockDriver {
-    pub fn new(mmio_slot: &mut MMIOSlot) -> Result<Self, SvsmError> {
+    pub fn new(mmio_slot: MMIOSlotGuard) -> Result<Self, SvsmError> {
         Ok(VirtIOVsockDriver(VirtIOVsockDevice::new(mmio_slot)?))
     }
 }
