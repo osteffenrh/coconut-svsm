@@ -49,6 +49,22 @@ before allowing them to be committed. It can be installed by running
 
 from the projects root directory.
 
+Use [Taplo](https://taplo.tamasfe.dev/) to format all TOML files (`Cargo.toml`, `.cargo/config.toml`, etc.).
+The style is defined in `taplo.toml` and overrides the Taplo's default style
+minimally, forcing an indentation of 4 spaces.
+
+Taplo can be installed directly via cargo:
+
+```bash
+cargo install taplo-cli
+```
+
+To format all `.toml` files in the repository run:
+
+```bash
+taplo fmt
+```
+
 For detailed instructions on documentation guidelines please have a look at
 [RUSTDOC-GUIDELINES.md](RUSTDOC-GUIDELINES.md).
 
