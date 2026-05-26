@@ -4,7 +4,14 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-clap = { workspace = true, features = ["color", "derive", "help", "std", "suggestions", "usage"] }
+clap = { workspace = true, features = [
+    "color",
+    "derive",
+    "help",
+    "std",
+    "suggestions",
+    "usage",
+] }
 packit = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["std", "derive"] }
 serde_json = { workspace = true, default-features = true }
