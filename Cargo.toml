@@ -65,7 +65,8 @@ packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
-virtio-drivers = { git = "https://github.com/coconut-svsm/virtio-drivers.git", branch = "svsm" }
+safe-mmio = { git = "https://github.com/osteffenrh/safe-mmio", branch="custom-mmio_external-linked" }
+virtio-drivers = { git = "https://github.com/osteffenrh/virtio-drivers", branch = "custom-mmio_external-linked" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
