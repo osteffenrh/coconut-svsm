@@ -10,6 +10,7 @@ use crate::mm::GlobalRangeGuard;
 use crate::virtio::VirtioError;
 use crate::virtio::hal::SvsmHal;
 use crate::virtio::mmio::{MmioSlot, MmioSlots};
+use crate::virtio::transport::SvsmMmioTransport;
 use crate::vsock::VSOCK_MIN_PORT;
 use crate::vsock::VsockDriver;
 use crate::vsock::api::VsockTransport;
@@ -22,10 +23,9 @@ use core::sync::atomic::AtomicU32;
 use virtio_drivers::device::socket::VsockConnectionManager;
 use virtio_drivers::device::socket::{VirtIOSocket, VsockAddr};
 use virtio_drivers::transport::DeviceType::Socket;
-use virtio_drivers::transport::mmio::MmioTransport;
 
 pub struct VirtIOVsockDriver {
-    device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<SvsmHal>>>,
+    device: SpinLock<VsockConnectionManager<SvsmHal, SvsmMmioTransport<SvsmHal>>>,
     _mmio_space: GlobalRangeGuard,
 }
 

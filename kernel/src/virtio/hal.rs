@@ -10,9 +10,13 @@ use alloc::vec::Vec;
 use core::{
     cell::OnceCell,
     mem::{MaybeUninit, size_of},
-    ptr::{NonNull, addr_of},
+    ptr::NonNull,
 };
+use safe_mmio::fields::{ReadPure, ReadPureWrite, WriteOnly};
+use safe_mmio::{SharedMmioPointer, UniqueMmioPointer};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
+
+use super::transport::MmioAccess;
 
 use crate::{
     address::{PhysAddr, VirtAddr},
@@ -63,6 +67,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     fn dma_alloc(
         pages: usize,
         _direction: virtio_drivers::BufferDirection,
+        _access_platform: bool,
     ) -> (virtio_drivers::PhysAddr, NonNull<u8>) {
         // TODO: allow more than one page.
         //       This currently works, because in "modern" virtio mode the crate only allocates
@@ -91,6 +96,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         paddr: virtio_drivers::PhysAddr,
         _vaddr: NonNull<u8>,
         pages: usize,
+        _access_platform: bool,
     ) -> i32 {
         //TODO: allow more than one page
         assert!(pages == 1);
@@ -123,6 +129,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     unsafe fn share(
         buffer: NonNull<[u8]>,
         direction: virtio_drivers::BufferDirection,
+        _access_platform: bool,
     ) -> virtio_drivers::PhysAddr {
         // TODO: allow more than one page
         assert!(buffer.len() <= PAGE_SIZE);
@@ -161,6 +168,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         paddr: virtio_drivers::PhysAddr,
         buffer: NonNull<[u8]>,
         direction: virtio_drivers::BufferDirection,
+        _access_platform: bool,
     ) {
         assert!(buffer.len() <= PAGE_SIZE);
 
@@ -189,7 +197,14 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         }
         // implicit drop of share_page here.
     }
+}
 
+/// MMIO access implementation for Coconut SVSN. Routes access trough [`SVSM_PLATFORM`]
+/// implementation.
+///
+/// SAFETY: The caller (SvsmMmioTransport) guarantees that src/dst point to
+/// valid, aligned MMIO registers within a mapped MMIO region.
+impl MmioAccess for SvsmHal {
     /// Performs memory mapped read from location of `src`. `src` itself is not modified,
     /// the value is returned instead.
     ///
@@ -199,7 +214,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     /// # Safety
     ///
     /// `src` must be properly aligned and reside at a readable memory address.
-    unsafe fn mmio_read<T: FromBytes + Immutable>(src: &T) -> T {
+    unsafe fn mmio_read<T: FromBytes>(src: *const T) -> T {
         let mut b = MaybeUninit::<T>::uninit();
         // SAFETY: We are trusting the caller (the virtio driver) to ensure `src` is a valid MMIO
         // address and that it is aligned properly. If SVSM_PLATFORM.mmio_read() doesn't fail
@@ -213,7 +228,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
                 size_of::<T>(),
             );
             SVSM_PLATFORM
-                .mmio_read(VirtAddr::from(addr_of!(*src)), b_slice)
+                .mmio_read(VirtAddr::from(src), b_slice)
                 .unwrap();
             b.assume_init()
         }
@@ -227,12 +242,39 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     /// # Safety
     ///
     /// `dst` must be properly aligned and reside at a writable memory address.
-    unsafe fn mmio_write<T: IntoBytes + Immutable>(dst: &mut T, v: T) {
+    unsafe fn mmio_write<T: IntoBytes + Immutable>(dst: *mut T, value: T) {
         // SAFETY: We are trusting the caller (the virtio driver) to ensure validity of `paddr` and alignment of data.
         unsafe {
             SVSM_PLATFORM
-                .mmio_write(VirtAddr::from(addr_of!(*dst)), v.as_bytes())
+                .mmio_write(VirtAddr::from(dst), value.as_bytes())
                 .unwrap();
         }
+    }
+
+    fn read_pure<T: FromBytes + IntoBytes>(x: &SharedMmioPointer<'_, ReadPure<T>>) -> T {
+        // SAFETY: ReadPure<T> is #[repr(transparent)], so the pointer cast is sound.
+        // SharedMmioPointer guarantees the pointer is valid MMIO.
+        unsafe { Self::mmio_read(x.ptr().cast::<T>()) }
+    }
+
+    fn read_pure_write<T: FromBytes + IntoBytes>(x: &SharedMmioPointer<'_, ReadPureWrite<T>>) -> T {
+        // SAFETY: ReadPureWrite<T> is #[repr(transparent)], so the pointer cast
+        // is sound.
+        unsafe { Self::mmio_read(x.ptr().cast::<T>()) }
+    }
+
+    fn write_only<T: IntoBytes + Immutable>(x: &mut UniqueMmioPointer<'_, WriteOnly<T>>, v: T) {
+        // SAFETY: WriteOnly<T> is #[repr(transparent)], so the pointer cast is
+        // sound.
+        unsafe { Self::mmio_write(x.ptr_mut().cast::<T>(), v) }
+    }
+
+    fn write_pure_write<T: IntoBytes + Immutable>(
+        x: &mut UniqueMmioPointer<'_, ReadPureWrite<T>>,
+        v: T,
+    ) {
+        // SAFETY: ReadPureWrite<T> is #[repr(transparent)], so the pointer cast
+        // is sound.
+        unsafe { Self::mmio_write(x.ptr_mut().cast::<T>(), v) }
     }
 }
