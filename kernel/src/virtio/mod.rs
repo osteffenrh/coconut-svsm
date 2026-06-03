@@ -6,6 +6,7 @@
 
 pub mod error;
 pub mod hal;
+pub mod transport;
 
 pub use error::VirtioError;
 

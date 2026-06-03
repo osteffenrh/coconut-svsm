@@ -8,7 +8,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 
-use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
+use virtio_drivers::transport::{DeviceType, Transport};
 
 use crate::address::PhysAddr;
 use crate::boot_params::BootParams;
@@ -17,11 +17,12 @@ use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntry
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::virtio::hal::{SvsmHal, virtio_init};
+use crate::virtio::transport::SvsmMmioTransport;
 
 #[derive(Debug)]
 pub struct MmioSlot {
     pub mmio_range: GlobalRangeGuard,
-    pub transport: MmioTransport<SvsmHal>,
+    pub transport: SvsmMmioTransport<SvsmHal>,
 }
 
 #[derive(Debug, Default)]
@@ -71,11 +72,12 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         };
 
         // Not expected to fail, because mem exists.
-        let header = NonNull::new(mem.addr().as_mut_ptr()).unwrap();
+        let header = NonNull::new(mem.addr().as_mut_ptr::<u8>()).unwrap();
 
         // SAFETY: `map_global_range_4k_shared` guarantees us proper address alignment.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
-        let Ok(transport) = (unsafe { MmioTransport::<SvsmHal>::new(header) }) else {
+        let Ok(transport) = (unsafe { SvsmMmioTransport::<SvsmHal>::new(header, PAGE_SIZE) })
+        else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
             log::debug!("MmioSlots: {addr:x} empty");
             continue;

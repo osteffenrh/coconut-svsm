@@ -1954,6 +1954,7 @@ dependencies = [
  "release",
  "rustc-demangle",
  "rustc_version",
+ "safe-mmio",
  "serde",
  "serde_json",
  "sha2",

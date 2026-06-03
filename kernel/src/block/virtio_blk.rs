@@ -14,15 +14,15 @@ use crate::types::PAGE_SIZE;
 use crate::virtio::VirtioError;
 use crate::virtio::hal::SvsmHal;
 use crate::virtio::mmio::{MmioSlot, MmioSlots};
+use crate::virtio::transport::SvsmMmioTransport;
 use virtio_drivers::device::blk::{SECTOR_SIZE, VirtIOBlk};
 use virtio_drivers::transport::DeviceType::Block;
-use virtio_drivers::transport::mmio::MmioTransport;
 
 extern crate alloc;
 use alloc::boxed::Box;
 
 pub struct VirtIOBlkDriver {
-    device: SpinLock<VirtIOBlk<SvsmHal, MmioTransport<SvsmHal>>>,
+    device: SpinLock<VirtIOBlk<SvsmHal, SvsmMmioTransport<SvsmHal>>>,
     _mmio_space: GlobalRangeGuard,
 }
 
