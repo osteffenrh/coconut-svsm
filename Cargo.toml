@@ -89,7 +89,6 @@ cocoon-tpm-storage = { version = "0.1.5", default-features = false }
 cocoon-tpm-tpm2-interface = { version = "0.1.2", default-features = false }
 cocoon-tpm-utils-async = { version = "0.1.4", default-features = false }
 cocoon-tpm-utils-common = { version = "0.1.4", default-features = false }
-concat-kdf = "0.1.0"
 gdbstub = { version = "0.7.10", default-features = false }
 gdbstub_arch = { version = "0.3.3" }
 fdt = { version = "0.1.5" }

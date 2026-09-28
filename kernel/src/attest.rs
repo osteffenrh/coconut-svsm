@@ -7,6 +7,7 @@
 
 extern crate alloc;
 
+use crate::crypto::concat_kdf;
 use crate::{
     boot_params::BootParams,
     crypto::{SecretSlice, get_svsm_rng},
@@ -218,7 +219,7 @@ impl AttestationDriver {
         let wrapping_key: KwAes256 = {
             let mut buf = SecretSlice::new_sized(32).or(Err(AttestationError::VecAlloc))?;
 
-            concat_kdf::derive_key_into::<sha2::Sha256>(&z, &kdm, &mut buf)
+            concat_kdf::concat_kdf_sha256(&z, &kdm, &mut buf)
                 .map_err(AttestationError::KeyDerivation)?;
 
             KwAes256::new_from_slice(&buf).or(Err(AttestationError::WrapKeyArrayConvert))
@@ -296,7 +297,7 @@ pub enum AttestationError {
     /// Guest has failed attestation.
     Failed,
     // Unable to derive wrap key.
-    KeyDerivation(concat_kdf::Error),
+    KeyDerivation(CryptoError),
     /// Error deserializing the negotiation response from JSON bytes.
     NegotiationDeserialize,
     /// Error serializing the negotiation request to JSON bytes.
