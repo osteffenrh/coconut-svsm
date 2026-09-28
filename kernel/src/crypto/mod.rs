@@ -129,6 +129,8 @@ pub mod aead {
     pub struct Aes256Gcm;
 }
 
+pub mod concat_kdf;
+
 pub mod digest {
     //! API for message digests.
 
