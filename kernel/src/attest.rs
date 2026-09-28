@@ -26,11 +26,12 @@ use cocoon_tpm_crypto::{
     CryptoError,
     ecc::{EccKey, curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z},
 };
+use cocoon_tpm_tpm2_interface::TpmiAlgHash;
 use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
+use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
@@ -385,22 +386,32 @@ fn hash(
     n: &NegotiationResponse,
     pub_key: &TpmsEccPoint<'static>,
 ) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
+    let mut sha = cocoon_tpm_crypto::hash::HashInstance::new(TpmiAlgHash::Sha512)
+        .expect("SHA-512 must be supported");
 
     for p in &n.params {
         match p {
             NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
+                let iter = SingletonIoSlice::new(&n.challenge).map_infallible_err::<CryptoError>();
+                sha.update(iter).map_err(AttestationError::Crypto)?;
             }
             #[allow(irrefutable_let_patterns)]
             NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
+                let iter_x =
+                    SingletonIoSlice::new(&pub_key.x.buffer).map_infallible_err::<CryptoError>();
+                sha.update(iter_x).map_err(AttestationError::Crypto)?;
+                let iter_y =
+                    SingletonIoSlice::new(&pub_key.y.buffer).map_infallible_err::<CryptoError>();
+                sha.update(iter_y).map_err(AttestationError::Crypto)?;
             }
         }
     }
 
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+    let res = sha.finalize().map_err(AttestationError::Crypto)?;
+    let cocoon_tpm_tpm2_interface::TpmtHa::Sha512(buf) = res else {
+        unreachable!();
+    };
+    try_to_vec(&buf).or(Err(AttestationError::VecAlloc))
 }
 
 #[cfg(test)]
@@ -408,6 +419,7 @@ mod tests {
     use super::*;
     use alloc::vec;
     use cocoon_tpm_tpm2_interface::{Tpm2bEccParameter, TpmBuffer};
+    use sha2::{Digest, Sha512};
 
     fn make_ecc_point(x: &[u8], y: &[u8]) -> TpmsEccPoint<'static> {
         TpmsEccPoint {
