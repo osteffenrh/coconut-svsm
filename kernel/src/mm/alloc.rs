@@ -55,7 +55,7 @@ impl From<AllocError> for SvsmError {
 
 /// Maximum order of page allocations (up to 128kb)
 #[verus_spec]
-pub const MAX_ORDER: usize = 6;
+pub const MAX_ORDER: usize = 7;
 
 /// Special marker for no-page
 #[verus_spec]
