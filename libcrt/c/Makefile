@@ -59,6 +59,7 @@ OBJS += $(addprefix $(OUT_DIR)/src/stdlib/, \
 				atoi.o \
 				qsort.o \
 				qsort_nr.o \
+				strtoul.o \
 				)
 # string
 OBJS += $(addprefix $(OUT_DIR)/src/string/, \
@@ -78,6 +79,7 @@ OBJS += $(addprefix $(OUT_DIR)/src/string/, \
 				strcspn.o \
 				strcpy.o \
 				strdup.o \
+			strndup.o \
 				strlen.o \
 				strncasecmp.o \
 				strncat.o \

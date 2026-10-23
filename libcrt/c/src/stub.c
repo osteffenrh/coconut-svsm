@@ -57,18 +57,6 @@ int clearerr(FILE *stream) {
 
 // stdlib.h
 
-long strtol(const char *nptr, char **endptr, int base)
-{
-    NOT_IMPLEMENTED;
-    return LONG_MIN;
-}
-
-unsigned long strtoul(const char *nptr, char **endptr, int base)
-{
-    NOT_IMPLEMENTED;
-    return ULONG_MAX;
-}
-
 char *getenv(const char *varname)
 {
     NOT_IMPLEMENTED;
@@ -172,6 +160,12 @@ char *ctime(const time_t *t) {
 time_t mktime(struct tm *tm) {
     NOT_IMPLEMENTED;
     return 0;
+}
+
+int remove(const char *pathname)
+{
+    NOT_IMPLEMENTED;
+    return -1;
 }
 
 // string.h

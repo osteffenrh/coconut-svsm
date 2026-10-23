@@ -69,6 +69,7 @@
 // errno.h
 
 extern int errno;
+#define ENOENT        2
 #define EINTR         4
 #define ENOMEM        12
 #define EINVAL        22
@@ -154,6 +155,12 @@ unsigned int sleep(unsigned int seconds);
 
 #define EOF (-1)
 #define BUFSIZ  8192
+#define FILENAME_MAX  4096
+
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
+
 void setbuf(FILE *stream, char *buf);
 int printf(const char *restrict fmt, ...);
 int dprintf(int fd, const char *__restrict fmt, ...);
@@ -166,6 +173,7 @@ int sprintf(char *restrict s, const char *restrict fmt, ...);
 int vasprintf(char **s, const char *fmt, va_list ap);
 int vsnprintf(char *restrict s, size_t n, const char *restrict fmt, va_list ap);
 int vsprintf(char *restrict s, const char *restrict fmt, va_list ap);
+int remove(const char *pathname);
 
 int vprints(const char *format, va_list ap);
 int vsnprints(char *str, size_t size, const char *format, va_list ap);
@@ -196,6 +204,7 @@ void srand(unsigned s);
 
 // time.h
 
+#define CLOCK_REALTIME           0
 #define CLOCK_MONOTONIC          1
 
 struct tm {
@@ -339,6 +348,7 @@ char *__stpcpy(char *restrict d, const char *restrict s);
 char *__stpncpy(char *restrict d, const char *restrict s, size_t n);
 char *strstr(const char *h, const char *n);
 char *strdup(const char *s);
+char *strndup(const char *s, size_t n);
 char *strncpy(char *restrict d, const char *restrict s, size_t n);
 int strncmp(const char *_l, const char *_r, size_t n);
 int strcasecmp(const char *_l, const char *_r);
