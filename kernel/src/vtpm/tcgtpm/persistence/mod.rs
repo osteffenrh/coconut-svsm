@@ -13,9 +13,6 @@ pub trait Marker {
     fn write() -> Result<(), SvsmError> {
         Ok(())
     }
-    fn clear() -> Result<(), SvsmError> {
-        Ok(())
-    }
 }
 
 #[cfg(feature = "persistence")]
@@ -59,17 +56,6 @@ mod marker {
             Ok(())
         }
 
-        fn clear() -> Result<(), SvsmError> {
-            if !persistence_available() {
-                return Ok(());
-            }
-            persistence_write_inode_sync(
-                TpmInode::Manufactured.inode(),
-                Zeroizing::new(Vec::new()),
-                true,
-            )?;
-            Ok(())
-        }
     }
 }
 

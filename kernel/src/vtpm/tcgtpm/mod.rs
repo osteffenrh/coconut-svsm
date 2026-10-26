@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 //
 // Copyright (C) 2023 IBM
+// Copyright (c) 2026 Red Hat, Inc.
 //
 // Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
-//! This crate implements the virtual TPM interfaces for the TPM 2.0
-//! Reference Implementation (by Microsoft)
+//! Virtual TPM backend using libtpms TPMLIB_* API.
 
 mod persistence;
 use persistence::{ManufacturedMarker, Marker as _};
@@ -17,15 +17,19 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use core::ffi::c_void;
+use core::sync::atomic::{AtomicU8, Ordering};
 use libtcgtpm::bindings::{
-    _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable, _plat__NVNeedsManufacture,
-    _plat__RunCommand, _plat__SetNvAvail, _plat__Signal_PowerOn, _plat__Signal_Reset,
-    TPM_Manufacture,
+    TPMLIB_ChooseTPMVersion, TPMLIB_MainInit, TPMLIB_Process, TPMLIB_RegisterCallbacks,
+    TPMLIB_SetState, TPMLIB_StateType_TPMLIB_STATE_PERMANENT,
+    TPMLIB_TPMVersion_TPMLIB_TPM_VERSION_2, TPMLIB_WasManufactured, TPM_MODIFIER_INDICATOR,
+    TPM_RESULT, libtpms_callbacks,
 };
 
+unsafe extern "C" {
+    fn free(ptr: *mut u8);
+}
+
 use crate::{
-    address::VirtAddr,
     protocols::{errors::SvsmReqError, vtpm::TpmPlatformCommand},
     types::PAGE_SIZE,
     vtpm::{
@@ -33,6 +37,40 @@ use crate::{
         tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA,
     },
 };
+
+const TPM_SUCCESS: TPM_RESULT = 0;
+
+static CURRENT_LOCALITY: AtomicU8 = AtomicU8::new(0);
+
+unsafe extern "C" fn locality_callback(
+    locality: *mut TPM_MODIFIER_INDICATOR,
+    _tpm_number: u32,
+) -> TPM_RESULT {
+    // SAFETY: caller (libtpms) provides a valid pointer
+    unsafe { *locality = CURRENT_LOCALITY.load(Ordering::Relaxed) as u32 };
+    TPM_SUCCESS
+}
+
+fn register_callbacks() -> Result<(), SvsmReqError> {
+    let mut cbs = libtpms_callbacks {
+        sizeOfStruct: core::mem::size_of::<libtpms_callbacks>() as i32,
+        tpm_nvram_init: None,
+        tpm_nvram_loaddata: None,
+        tpm_nvram_storedata: None,
+        tpm_nvram_deletename: None,
+        tpm_io_init: None,
+        tpm_io_getlocality: Some(locality_callback),
+        tpm_io_getphysicalpresence: None,
+    };
+
+    // SAFETY: FFI call with valid struct pointer.
+    let rc = unsafe { TPMLIB_RegisterCallbacks(&raw mut cbs) };
+    if rc != TPM_SUCCESS {
+        log::error!("TPMLIB_RegisterCallbacks failed rc={rc}");
+        return Err(SvsmReqError::incomplete());
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct TcgTpm {
@@ -46,48 +84,6 @@ impl TcgTpm {
             is_powered_on: false,
             ekpub: None,
         }
-    }
-
-    fn manufacture(&self) -> Result<(), SvsmReqError> {
-        ManufacturedMarker::clear()?;
-
-        // Wipe stale NV state and re-enable to get a fresh buffer with the
-        // correct size (e.g. after a config change). NVDisable resets s_NvFile,
-        // which is needed because NVEnable is a no-op when s_NvFile is already
-        // set.
-
-        // SAFETY: FFI call. Parameter checked, no return value.
-        unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
-
-        // SAFETY: FFI call. Parameters and return values are checked.
-        let rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
-        if rc != 0 {
-            log::error!("_plat__NVEnable failed rc={rc}");
-            return Err(SvsmReqError::incomplete());
-        }
-
-        // The TCG TPM Simulator code runs additional manufacturing coverage
-        // tests (re-manufacture, teardown, re-manufacture) that are not needed
-        // in production.
-        // SAFETY: FFI call. Parameter and return value are checked.
-        let result = unsafe { TPM_Manufacture(1) };
-        if result < 0 {
-            log::error!("TPM_Manufacture failed rc={result}");
-            // If the manufacture didn't work, then make sure that the NV file
-            // doesn't survive. This prevents manufacturing failures from being
-            // ignored the next time the code is run.
-            // SAFETY: FFI call. Parameter checked, no return value.
-            unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
-            return Err(SvsmReqError::incomplete());
-        }
-
-        // Persist a manufacturing marker so that the next boot can
-        // distinguish a completed manufacture from one interrupted
-        // (where NVEnable already flushed an NV image but
-        // TPM_Manufacture never finished).
-        ManufacturedMarker::write()?;
-
-        Ok(())
     }
 }
 
@@ -110,80 +106,53 @@ impl TcgTpmSimulatorInterface for TcgTpm {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        // _plat__RunCommand() should define it `const` because it only uses
-        // it as input, but unfortunately it doesn't. Anyway, this buffer
-        // is only read during the FFI call.
-        let request_ffi_p = command.as_ptr() as *mut u8;
-        let request_ffi_size = command.len() as u32;
+        CURRENT_LOCALITY.store(locality, Ordering::Relaxed);
 
-        let mut response_ffi = Vec::<u8>::with_capacity(TPM_BUFFER_MAX_SIZE);
-        let mut response_ffi_p = response_ffi.as_mut_ptr();
-        let mut response_ffi_size = TPM_BUFFER_MAX_SIZE as u32;
+        let request_p = command.as_ptr() as *mut u8;
+        let request_size = command.len() as u32;
 
-        // SAFETY: FFI calls. Parameters are checked. Both calls are void,
-        // _plat__RunCommand() returns `response_ffi_size` value by reference
-        // and it is validated.
-        unsafe {
-            _plat__LocalitySet(locality);
-            _plat__RunCommand(
-                request_ffi_size,
-                request_ffi_p,
-                &raw mut response_ffi_size,
-                &raw mut response_ffi_p,
-            );
-            if response_ffi_size == 0 || response_ffi_size as usize > response_ffi.capacity() {
-                return Err(SvsmReqError::invalid_request());
-            }
-            // In TPM failure mode, _plat__RunCommand() redirects the response
-            // pointer to an internal static buffer instead of writing into the
-            // provided one.
-            if response_ffi_p != response_ffi.as_mut_ptr() {
-                core::ptr::copy(
-                    response_ffi_p,
-                    response_ffi.as_mut_ptr(),
-                    response_ffi_size as usize,
-                );
-            }
-            response_ffi.set_len(response_ffi_size as usize);
+        let mut response_p: *mut u8 = core::ptr::null_mut();
+        let mut response_size: u32 = 0;
+        let mut response_bufsize: u32 = 0;
+
+        // SAFETY: FFI call. TPMLIB_Process manages its own response buffer
+        // via realloc. The locality callback provides the locality value.
+        let rc = unsafe {
+            TPMLIB_Process(
+                &raw mut response_p,
+                &raw mut response_size,
+                &raw mut response_bufsize,
+                request_p,
+                request_size,
+            )
+        };
+
+        if rc != TPM_SUCCESS || response_p.is_null() || response_size == 0 {
+            return Err(SvsmReqError::invalid_request());
         }
 
-        Ok(response_ffi)
+        // SAFETY: TPMLIB_Process allocated response_p via malloc/realloc
+        // with at least response_size bytes.
+        let response =
+            unsafe { core::slice::from_raw_parts(response_p, response_size as usize) }.to_vec();
+
+        // SAFETY: response_p was allocated by libtpms via malloc/realloc.
+        unsafe { free(response_p) };
+
+        Ok(response)
     }
 
     fn signal_poweron(&mut self, only_reset: bool) -> Result<(), SvsmReqError> {
-        if self.is_powered_on && !only_reset {
-            return Ok(());
-        }
         if only_reset && !self.is_powered_on {
             return Err(SvsmReqError::invalid_request());
         }
-        if !only_reset {
-            // SAFETY: FFI call. No parameter, return value is checked.
-            let result = unsafe { _plat__Signal_PowerOn() };
-            if result != 0 {
-                log::error!("_plat__Signal_PowerOn failed rc={result}");
-                return Err(SvsmReqError::incomplete());
-            }
-        }
-        // It calls TPM_init() within to indicate that a TPM2_Startup is required.
-        // SAFETY: FFI call. No parameter, return value is checked.
-        let result = unsafe { _plat__Signal_Reset() };
-        if result != 0 {
-            log::error!("_plat__Signal_Reset failed rc={result}");
-            return Err(SvsmReqError::incomplete());
-        }
-        self.is_powered_on = true;
-
+        // TPMLIB_MainInit already handled power-on and reset during init.
+        // This is kept for interface compatibility.
         Ok(())
     }
 
     fn signal_nvon(&self) -> Result<(), SvsmReqError> {
-        if !self.is_powered_on {
-            return Err(SvsmReqError::invalid_request());
-        }
-        // SAFETY: FFI call. No Parameters or return values.
-        unsafe { _plat__SetNvAvail() };
-
+        // TPMLIB_MainInit already signaled NV availability.
         Ok(())
     }
 }
@@ -201,28 +170,78 @@ impl VtpmInterface for TcgTpm {
     }
 
     fn init(&mut self) -> Result<(), SvsmReqError> {
-        // SAFETY: FFI call. Parameters and return values are checked.
-        let rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
-        if rc != 0 {
-            log::error!("_plat__NVEnable failed rc={rc}");
+        // SAFETY: FFI call, no parameters.
+        let rc = unsafe { TPMLIB_ChooseTPMVersion(TPMLIB_TPMVersion_TPMLIB_TPM_VERSION_2) };
+        if rc != TPM_SUCCESS {
+            log::error!("TPMLIB_ChooseTPMVersion failed rc={rc}");
+            return Err(SvsmReqError::incomplete());
+        }
+
+        register_callbacks()?;
+
+        // If a previous manufacture completed successfully, load the
+        // persisted NV state and feed it to libtpms so that MainInit
+        // skips manufacturing and restores the existing TPM state.
+        if ManufacturedMarker::exists()? {
+            if let Some(nv_data) = Self::load_nv_state() {
+                log::info!("VTPM: restoring NV state from persistent storage");
+                // SAFETY: FFI call with valid buffer pointer and length.
+                let rc = unsafe {
+                    TPMLIB_SetState(
+                        TPMLIB_StateType_TPMLIB_STATE_PERMANENT,
+                        nv_data.as_ptr(),
+                        nv_data.len() as u32,
+                    )
+                };
+                if rc != TPM_SUCCESS {
+                    log::error!("TPMLIB_SetState(PERMANENT) failed rc={rc}");
+                    return Err(SvsmReqError::incomplete());
+                }
+            }
+        }
+
+        // SAFETY: FFI call. MainInit handles NV enable, manufacture (if
+        // needed), power-on, reset, and NV-available signaling internally.
+        let rc = unsafe { TPMLIB_MainInit() };
+        if rc != TPM_SUCCESS {
+            log::error!("TPMLIB_MainInit failed rc={rc}");
             return Err(SvsmReqError::incomplete());
         }
 
         // SAFETY: FFI call, no parameters.
-        let needs_manufacture = unsafe { _plat__NVNeedsManufacture() } != 0;
-
-        if !needs_manufacture && ManufacturedMarker::exists()? {
-            log::info!("VTPM: loaded existing NV state from persistent storage");
-        } else {
-            log::info!("VTPM: manufacturing new NV state");
-            self.manufacture()?;
+        let was_manufactured = unsafe { TPMLIB_WasManufactured() } != 0;
+        if was_manufactured {
+            log::info!("VTPM: manufactured new NV state");
+            ManufacturedMarker::write()?;
         }
 
-        self.signal_poweron(false)?;
-        self.signal_nvon()?;
-
-        log::info!("VTPM: TPM 2.0 Reference Implementation initialized");
+        self.is_powered_on = true;
+        log::info!("VTPM: libtpms TPM 2.0 initialized");
 
         Ok(())
+    }
+}
+
+impl TcgTpm {
+    #[cfg(feature = "persistence")]
+    fn load_nv_state() -> Option<Vec<u8>> {
+        use crate::crt::TpmInode;
+        use crate::persistence::{Inode, persistence_available, persistence_read_inode_sync};
+
+        if !persistence_available() {
+            return None;
+        }
+        match persistence_read_inode_sync(TpmInode::NvChip.inode()) {
+            Ok(data) => data.map(|z| z.to_vec()),
+            Err(e) => {
+                log::error!("VTPM: failed to load NV state: {e:?}");
+                None
+            }
+        }
+    }
+
+    #[cfg(not(feature = "persistence"))]
+    fn load_nv_state() -> Option<Vec<u8>> {
+        None
     }
 }

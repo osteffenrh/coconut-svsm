@@ -32,7 +32,7 @@ fn main() {
         "x86_64-linux-gnu-gcc".to_string()
     };
 
-    // Build libtcgtpm. OpenSSL (libcrypto) and libcrt come from ossl-bare-sys and libcrt crate
+    // Build libtpms. OpenSSL (libcrypto) and libcrt come from ossl-bare-sys and libcrt crate
     // respectively.
     let mut cmd = Command::new("make");
     cmd.arg(format!("CC={cc}"));
@@ -54,7 +54,24 @@ fn main() {
     let out_path = PathBuf::from(out_dir.clone());
 
     let bindings = bindgen::Builder::default()
-        .header("deps/tpm-20-ref/TPMCmd/Platform/include/Platform.h".to_string())
+        .header("deps/libtpms/src/tpm2/TPMCmd/Platform/include/Platform.h".to_string())
+        .header("deps/libtpms/include/libtpms/tpm_library.h".to_string())
+        .header("deps/libtpms/include/libtpms/tpm_error.h".to_string())
+        .header("deps/libtpms/include/libtpms/tpm_types.h".to_string())
+        // TPMLIB high-level API
+        .allowlist_function("TPMLIB_ChooseTPMVersion")
+        .allowlist_function("TPMLIB_MainInit")
+        .allowlist_function("TPMLIB_Terminate")
+        .allowlist_function("TPMLIB_Process")
+        .allowlist_function("TPMLIB_RegisterCallbacks")
+        .allowlist_function("TPMLIB_SetState")
+        .allowlist_function("TPMLIB_GetState")
+        .allowlist_function("TPMLIB_WasManufactured")
+        .allowlist_function("TPMLIB_SetProfile")
+        .allowlist_type("TPMLIB_TPMVersion")
+        .allowlist_type("TPMLIB_StateType")
+        .allowlist_type("libtpms_callbacks")
+        // _plat__* functions still used
         .allowlist_function("_plat__RunCommand")
         .allowlist_function("_plat__LocalitySet")
         .allowlist_function("_plat__SetNvAvail")
@@ -62,35 +79,29 @@ fn main() {
         .allowlist_function("_plat__Signal_Reset")
         .allowlist_function("_plat__NVDisable")
         .allowlist_function("_plat__NVEnable")
-        .allowlist_function("_plat__NVNeedsManufacture")
         .allowlist_function("TPM_Manufacture")
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
         .clang_arg("-nostdinc")
         .clang_arg(format!("-isystem{libcrt_include_dir}"))
         .clang_arg("-fno-pie") // libcrt.h hides symbols if pie is enabled
-        .clang_arg("-Ideps/tpm-20-ref/TPMCmd/tpm/include")
-        .clang_arg("-Ideps/TpmConfiguration")
+        .clang_arg("-D__linux__") // for endianness detection in TpmProfile_Common.h
+        .clang_arg("-Ideps/libtpms/include/libtpms")
+        .clang_arg("-Ideps/libtpms/src/tpm2/TPMCmd/tpm/include")
+        .clang_arg("-Ideps/libtpms/src/tpm2/TPMCmd/tpm/include/tpm_public")
+        .clang_arg("-Ideps/libtpms/src/tpm2/TPMCmd/tpm/include/platform_interface")
+        .clang_arg("-Ideps/libtpms/src/tpm2/TPMCmd/TpmConfiguration")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
-        .unwrap_or_else(|_| panic!("Unable to generate bindings for deps/libtcgtpm.h"));
+        .unwrap_or_else(|_| panic!("Unable to generate bindings for libtpms"));
 
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .unwrap_or_else(|_| panic!("Unable to write bindings.rs"));
 
-    // 'static=...' is needed because core lib + platform lib have
-    // circular dependencies.
-    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/tpm/src");
-    println!("cargo:rustc-link-lib=static=Tpm_CoreLib");
-    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/Platform");
-    println!("cargo:rustc-link-lib=static=Tpm_PlatformLib");
-
-    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/tpm/cryptolibs/TpmBigNum");
-    println!("cargo:rustc-link-lib=Tpm_CryptoLib_TpmBigNum");
-
-    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/cryptolib_Ossl");
-    println!("cargo:rustc-link-lib=Tpm_CryptoLib_Math_Ossl");
+    // Link the single libtpms static library
+    println!("cargo:rustc-link-search={out_dir}/libtpms-build");
+    println!("cargo:rustc-link-lib=static=tpms");
 
     // libcrypto and libcrt are provided by cocoon-tpm-ossl-bare-sys and libcrt crate respectively, at link time.
 
