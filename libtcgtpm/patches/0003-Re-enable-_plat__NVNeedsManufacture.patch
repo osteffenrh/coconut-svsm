@@ -1,0 +1,33 @@
+From f3c396f4d0fba5393ef889d8c36822c4cd7dae0e Mon Sep 17 00:00:00 2001
+From: Oliver Steffen <osteffen@redhat.com>
+Date: Mon, 26 Oct 2026 15:39:44 +0100
+Subject: [PATCH 3/3] Re-enable _plat__NVNeedsManufacture
+
+libtpms disables _plat__NVNeedsManufacture behind #if 0 since swtpm
+uses the TPMLIB_* API instead. SVSM calls the _plat__* platform
+interface directly and needs this function to detect when NV state
+must be manufactured.
+---
+ src/tpm2/TPMCmd/Platform/src/NVMem.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/tpm2/TPMCmd/Platform/src/NVMem.c b/src/tpm2/TPMCmd/Platform/src/NVMem.c
+index 94e909c..4978ba2 100644
+--- a/src/tpm2/TPMCmd/Platform/src/NVMem.c
++++ b/src/tpm2/TPMCmd/Platform/src/NVMem.c
+@@ -441,6 +441,7 @@ LIB_EXPORT void _plat__ClearNvAvail(void)
+     s_NvIsAvailable = FALSE;
+     return;
+ }
++#endif /* libtpms added */
+ 
+ //*** _plat__NVNeedsManufacture()
+ // This function is used by the simulator to determine when the TPM's NV state
+@@ -453,4 +454,3 @@ LIB_EXPORT int _plat__NVNeedsManufacture(void)
+     return FALSE;
+ #endif
+ }
+-#endif /* libtpms added */
+-- 
+2.56.0
+

@@ -70,7 +70,7 @@ impl TcgTpm {
         // tests (re-manufacture, teardown, re-manufacture) that are not needed
         // in production.
         // SAFETY: FFI call. Parameter and return value are checked.
-        let result = unsafe { TPM_Manufacture(1) };
+        let result = unsafe { TPM_Manufacture(1, core::ptr::null()) };
         if result < 0 {
             log::error!("TPM_Manufacture failed rc={result}");
             // If the manufacture didn't work, then make sure that the NV file
