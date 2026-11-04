@@ -482,8 +482,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-crypto"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a65c8f2d0eb99ce3c53a9ad906e707a3e61a26569f8035ee07772e83d4ab4009"
+source = "git+https://github.com/coconut-svsm/cocoon-tpm.git?branch=main#94acce76f1dd97f89d01abeba6b5e43b188ea3a4"
 dependencies = [
  "aes 0.8.4",
  "camellia",
@@ -509,8 +508,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-ossl-bare-sys"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef5bf284564051b7c149102e5ae95967f7b4cd24e895847e5734454a9a2250cb"
+source = "git+https://github.com/coconut-svsm/cocoon-tpm.git?branch=main#94acce76f1dd97f89d01abeba6b5e43b188ea3a4"
 dependencies = [
  "bindgen",
  "cc",
@@ -528,8 +526,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-storage"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3be9a24b772eb4e094f2c76f3bd9f20ce1046d5dcea4adc255e51a81c921bfe8"
+source = "git+https://github.com/coconut-svsm/cocoon-tpm.git?branch=main#94acce76f1dd97f89d01abeba6b5e43b188ea3a4"
 dependencies = [
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
@@ -541,14 +538,12 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-tpm2-interface"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d44a2e63098a1cfdb24b1ba94dc1057d4c491ff3212337078052fecd9dddaa2b"
+source = "git+https://github.com/coconut-svsm/cocoon-tpm.git?branch=main#94acce76f1dd97f89d01abeba6b5e43b188ea3a4"
 
 [[package]]
 name = "cocoon-tpm-utils-async"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca101df93c1937ee110cf2dcebdd71af86a9826f6d95bd0ff17d064599cd0d2e"
+source = "git+https://github.com/coconut-svsm/cocoon-tpm.git?branch=main#94acce76f1dd97f89d01abeba6b5e43b188ea3a4"
 dependencies = [
  "cocoon-tpm-utils-common",
 ]
@@ -556,8 +551,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-utils-common"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbcc7da8ec0dbafead26b361b060e5f2ff83220cde219277b3f996a637b8131d"
+source = "git+https://github.com/coconut-svsm/cocoon-tpm.git?branch=main#94acce76f1dd97f89d01abeba6b5e43b188ea3a4"
 dependencies = [
  "cmpa",
  "zeroize",
