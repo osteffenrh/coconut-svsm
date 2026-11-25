@@ -97,7 +97,11 @@ OBJS += $(addprefix $(OUT_DIR)/src/time/, \
 
 all: $(OUT_DIR)/libcrt.a
 
+# Remove the archive from a previous run first: `ar r` never drops members,
+# so objects that were removed from $(OBJS) would otherwise linger in a
+# stale archive (e.g. after switching branches).
 $(OUT_DIR)/libcrt.a: $(OBJS)
+	rm -f $@
 	ar rcs $@ $(OBJS)
 
 $(OUT_DIR)/%.o : %.c
