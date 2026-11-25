@@ -8,12 +8,16 @@
 
 use core::mem::{offset_of, size_of};
 
-use crate::error::SvsmError;
-use crate::{
-    crypto::aead::{AUTHTAG_SIZE, Aes256Gcm, Aes256GcmTrait, IV_SIZE},
-    sev::secrets_page::VMPCK_SIZE,
-    types::PAGE_SIZE,
+use cocoon_tpm_crypto::{
+    CryptoError,
+    aead::{AeadAlg, AeadInstance},
 };
+use cocoon_tpm_utils_common::io_slices::{
+    IoSlicesIterCommon as _, SingletonIoSlice, SingletonIoSliceMut,
+};
+
+use crate::error::SvsmError;
+use crate::{sev::secrets_page::VMPCK_SIZE, types::PAGE_SIZE};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -21,6 +25,13 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 const HDR_VERSION: u8 = 1;
 /// Version of the message payload
 const MSG_VERSION: u8 = 1;
+
+// AEAD parameters of the message format (AMD SEV-SNP spec. table 98)
+
+/// Initialization vector size (96 bits)
+const IV_SIZE: usize = 12;
+/// Authenticated tag size (128 bits)
+const AUTHTAG_SIZE: usize = 16;
 
 /// AEAD Algorithm Encodings (AMD SEV-SNP spec. table 99)
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -191,11 +202,6 @@ impl SnpGuestRequestMsg {
     /// # Returns
     ///
     /// () on success and [`SvsmError`] on error.
-    ///
-    /// # Panic
-    ///
-    /// * The command length does not fit in a u16
-    /// * The encrypted and the original command don't have the same size
     pub fn encrypt_set(
         &mut self,
         msg_type: SnpGuestRequestMsgType,
@@ -210,24 +216,32 @@ impl SnpGuestRequestMsg {
         let aad: &[u8] = msg_hdr.get_aad_slice();
         let iv: [u8; IV_SIZE] = build_iv(msg_seqno);
 
+        // Zero the whole payload: the message page is shared with the
+        // hypervisor and must not leak stale data beyond the ciphertext.
         self.pld.fill(0);
 
-        // Encrypt the provided command and store the result in the message payload
-        let authtag_end: usize = Aes256Gcm::encrypt(&iv, vmpck0, aad, command, &mut self.pld)?;
-
-        // In the Aes256Gcm encrypt API, the authtag is postfixed (comes after the encrypted payload)
-        let ciphertext_end: usize = authtag_end - AUTHTAG_SIZE;
-        let authtag = self
+        // The command must fit into the message payload.
+        let ciphertext = self
             .pld
-            .get_mut(ciphertext_end..authtag_end)
+            .get_mut(..command.len())
             .ok_or(SvsmError::InvalidParameter)?;
 
-        // The command should have the same size when encrypted and decrypted
-        assert_eq!(command.len(), ciphertext_end);
+        let mut aead = AeadInstance::new(AeadAlg::Aes256Gcm, vmpck0).map_err(aead_error)?;
 
-        // Move the authtag to the message header
-        msg_hdr.set_authtag(authtag)?;
-        authtag.fill(0);
+        // Encrypt the provided command into the message payload. The AEAD
+        // interface keeps the authentication tag detached, and the message
+        // format stores it in the message header.
+        let mut authtag = [0u8; AUTHTAG_SIZE];
+        aead.encrypt(
+            &iv,
+            SingletonIoSlice::new(aad).map_infallible_err(),
+            SingletonIoSliceMut::new(ciphertext).map_infallible_err(),
+            SingletonIoSlice::new(command).map_infallible_err(),
+            &mut authtag,
+        )
+        .map_err(aead_error)?;
+
+        msg_hdr.set_authtag(&authtag)?;
 
         self.hdr = msg_hdr;
 
@@ -266,32 +280,58 @@ impl SnpGuestRequestMsg {
         let iv: [u8; IV_SIZE] = build_iv(msg_seqno);
         let aad: &[u8] = self.hdr.get_aad_slice();
 
-        // In the Aes256Gcm decrypt API, the authtag must be provided postfix in the inbuf
         let ciphertext_end = usize::from(self.hdr.msg_sz);
-        let tag_end: usize = ciphertext_end + AUTHTAG_SIZE;
 
-        // The message payload must be large enough to hold the ciphertext and
-        // the authentication tag.
-        let hdr_tag = self
+        // The message payload must be large enough to hold the ciphertext.
+        let ciphertext = self
+            .pld
+            .get(..ciphertext_end)
+            .ok_or(SvsmError::MessageDecryptionFailure)?;
+
+        // The provided buffer must be large enough to hold the plaintext.
+        let plaintext = outbuf
+            .get_mut(..ciphertext_end)
+            .ok_or(SvsmError::InvalidParameter)?;
+
+        // The authentication tag is detached: take it from the message header.
+        let authtag = self
             .hdr
             .authtag
             .get(..AUTHTAG_SIZE)
             .ok_or(SvsmError::MessageDecryptionFailure)?;
-        let pld_tag = self
-            .pld
-            .get_mut(ciphertext_end..tag_end)
-            .ok_or(SvsmError::MessageDecryptionFailure)?;
-        pld_tag.copy_from_slice(hdr_tag);
 
-        // Payload with postfixed authtag
-        let inbuf = self
-            .pld
-            .get(..tag_end)
-            .ok_or(SvsmError::MessageDecryptionFailure)?;
+        let mut aead = AeadInstance::new(AeadAlg::Aes256Gcm, vmpck0).map_err(aead_error)?;
 
-        let outbuf_len: usize = Aes256Gcm::decrypt(&iv, vmpck0, aad, inbuf, outbuf)?;
+        aead.decrypt(
+            &iv,
+            SingletonIoSlice::new(aad).map_infallible_err(),
+            SingletonIoSliceMut::new(plaintext).map_infallible_err(),
+            SingletonIoSlice::new(ciphertext).map_infallible_err(),
+            authtag,
+        )
+        .map_err(aead_error)?;
 
-        Ok(outbuf_len)
+        Ok(ciphertext_end)
+    }
+}
+
+/// Map an AEAD [`CryptoError`] to a [`SvsmError`].
+///
+/// The distinction is relevant to the caller in
+/// [`super::driver`](super::driver): on `SvsmError::InvalidParameter`
+/// it reports the error without invalidating the VMPCK0 key, while any other
+/// error causes the VMPCK0 to get cleared. Buffer size problems must
+/// therefore map to `InvalidParameter`, while an authentication failure maps
+/// to `MessageDecryptionFailure`.
+fn aead_error(err: CryptoError) -> SvsmError {
+    match err {
+        CryptoError::SignatureVerificationFailure => SvsmError::MessageDecryptionFailure,
+        CryptoError::KeySize
+        | CryptoError::InvalidIV
+        | CryptoError::InvalidParams
+        | CryptoError::InvalidMessageLength
+        | CryptoError::RequestTooBig => SvsmError::InvalidParameter,
+        _ => SvsmError::InvalidFormat,
     }
 }
 

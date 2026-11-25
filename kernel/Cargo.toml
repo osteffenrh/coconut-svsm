@@ -34,6 +34,7 @@ cocoon-tpm-crypto = { workspace = true, features = [
     # At least one of block cipher, mode and hash is needed,
     # otherwise compilation will fail due to empty enums.
     "aes",
+    "aes_gcm",
     "cfb",
     "sha256",
     "sha384",
