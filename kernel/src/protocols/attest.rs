@@ -9,7 +9,7 @@
 extern crate alloc;
 
 use crate::address::{Address, PhysAddr};
-use crate::crypto::digest::{Algorithm, Sha512};
+use crate::crypto::sha512_digest;
 use crate::error::SvsmError;
 use crate::greq::services::get_extended_report;
 use crate::greq::{
@@ -511,7 +511,7 @@ fn attest_single_service(
     // Concatenate nonce and manifest and hash per page 29 of
     // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.00".
     let nonce_and_manifest = [&nonce[..], manifest].concat();
-    let hash = Sha512::digest(&nonce_and_manifest);
+    let hash = sha512_digest(&nonce_and_manifest)?;
 
     get_attestation_report(hash.as_slice(), manifest, params, &ops.op)
 }
@@ -547,7 +547,7 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
 
     // Concatenate nonce and manifest and hash per page 29 of
     // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.00".
-    let hash = Sha512::digest(&nonce_and_manifest);
+    let hash = sha512_digest(&nonce_and_manifest)?;
 
     // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
     get_attestation_report(hash.as_slice(), manifest.as_slice(), params, &attest_op)

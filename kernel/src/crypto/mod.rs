@@ -10,8 +10,12 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
+use cocoon_tpm_crypto::hash::HashInstance;
+use cocoon_tpm_tpm2_interface::{TpmiAlgHash, TpmtHa};
+use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::error::SvsmError;
 use crate::utils::vec::vec_sized;
 
 /// Container for sensitive byte data.
@@ -59,30 +63,27 @@ impl core::fmt::Debug for SecretSlice {
 
 pub mod concat_kdf;
 
-pub mod digest {
-    //! API for message digests.
+/// Digest size of SHA-512 in bytes.
+const SHA512_DIGEST_SIZE: usize = 64;
 
-    extern crate alloc;
+/// One-shot SHA-512 digest over `input`.
+///
+/// Convenience wrapper over the streaming
+/// [`HashInstance`](cocoon_tpm_crypto::hash::HashInstance): callers hashing
+/// data assembled from multiple sources should feed it through separate
+/// [`update`](cocoon_tpm_crypto::hash::HashInstance::update) calls instead
+/// of concatenating it first.
+pub fn sha512_digest(input: &[u8]) -> Result<[u8; SHA512_DIGEST_SIZE], SvsmError> {
+    let mut hash = HashInstance::new(TpmiAlgHash::Sha512).map_err(|_| SvsmError::NotSupported)?;
 
-    use alloc::vec::Vec;
+    hash.update(SingletonIoSlice::new(input).map_infallible_err())
+        .map_err(|_| SvsmError::NotSupported)?;
 
-    // Note the typical new/update/finish API is not initially supported due
-    // to our inability to hide an abstract implementation's state representation
-    // behind a type without any fields.
-
-    pub trait Algorithm {
-        /// Digests `input` into an output vector of size `OUTPUT_LEN`.
-        fn digest(input: &[u8]) -> Vec<u8>;
+    match hash.finalize() {
+        Ok(TpmtHa::Sha512(digest)) => (&*digest).try_into().map_err(|_| SvsmError::InvalidFormat),
+        _ => Err(SvsmError::NotSupported),
     }
-
-    /// Sha512 type
-    #[derive(Copy, Clone, Debug)]
-    pub struct Sha512;
 }
-
-// Crypto implementations supported. Only one of them must be compiled-in.
-
-pub mod rustcrypto;
 
 mod rng;
 pub use rng::{SvsmRng, get_svsm_rng};
