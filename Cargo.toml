@@ -178,3 +178,7 @@ vfmt = "verusfmt `find ./ -name *.verus.rs`"
 [patch.crates-io]
 # cocoon-tpm OpenSSL backend integration lib for SVSM
 cocoon-tpm-ossl-bare-sys-target-integration = { path = "./cocoon-tpm-ossl-bare-sys-target-integration/" }
+# TEMPORARY: use the local cocoon-tpm checkout until the aead and keywrap
+# modules are released (expected in cocoon-tpm-crypto 0.1.6). Remove when
+# the release is out and the workspace version is bumped.
+cocoon-tpm-crypto = { path = "../cocoon-tpm/crypto" }

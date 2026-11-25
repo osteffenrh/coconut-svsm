@@ -475,10 +475,10 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-crypto"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a65c8f2d0eb99ce3c53a9ad906e707a3e61a26569f8035ee07772e83d4ab4009"
 dependencies = [
  "aes 0.8.4",
+ "aes-gcm",
+ "aes-kw",
  "camellia",
  "cbc",
  "cfb-mode",
@@ -561,15 +561,6 @@ name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
-
-[[package]]
-name = "concat-kdf"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d72c1252426a83be2092dd5884a5f6e3b8e7180f6891b6263d2c21b92ec8816"
-dependencies = [
- "digest 0.10.7",
-]
 
 [[package]]
 name = "const-oid"
@@ -2365,7 +2356,6 @@ dependencies = [
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-async",
  "cocoon-tpm-utils-common",
- "concat-kdf",
  "cpuarch",
  "cpufeature",
  "elf",
