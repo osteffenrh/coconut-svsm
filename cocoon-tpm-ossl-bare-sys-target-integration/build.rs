@@ -11,6 +11,18 @@ fn main() {
     // See ossl-bare-sys' build.rs for a list and meaning of metadata variables recognized.
     let src_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
+    // The SVSM target configuration only applies to builds for the SVSM
+    // itself, i.e. for freestanding targets. Emit no metadata at all for
+    // any other (host) build, so that ossl-bare-sys falls back to its
+    // default of a vanilla host-native OpenSSL build, linking against the
+    // host libc. Configuring OpenSSL for the SVSM target in a host build
+    // (no-threads, -nostdinc, libcrt) produces objects that cannot be
+    // linked against the host libc: e.g. libcrypto then refers to `errno`
+    // as a regular symbol, which clashes with the TLS `errno` of glibc.
+    if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "none" {
+        return;
+    }
+
     // libcrt is built by the libcrt crate. Read its include path for CPPFLAGS.
     let libcrt_include_dir = env::var("DEP_CRT_INCLUDE_DIR").expect("DEP_CRT_INCLUDE_DIR not set");
 
