@@ -2345,8 +2345,6 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 name = "svsm"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
- "aes-kw",
  "bitfield-struct",
  "bitflags 2.13.0",
  "bootdefs",
@@ -2374,7 +2372,6 @@ dependencies = [
  "safe-mmio",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "syscall",
  "test",
  "uuid",

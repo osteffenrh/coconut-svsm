@@ -22,8 +22,6 @@ elf.workspace = true
 syscall.workspace = true
 
 fdt.workspace = true
-aes-gcm = { workspace = true, features = ["aes", "alloc", "zeroize"] }
-aes-kw = { workspace = true, features = ["zeroize"], optional = true }
 bitfield-struct.workspace = true
 bitflags.workspace = true
 cocoon-tpm-crypto = { workspace = true, features = [
@@ -35,6 +33,7 @@ cocoon-tpm-crypto = { workspace = true, features = [
     # otherwise compilation will fail due to empty enums.
     "aes",
     "aes_gcm",
+    "aes_kw",
     "cfb",
     "sha256",
     "sha384",
@@ -64,8 +63,6 @@ serde = { workspace = true, optional = true, features = ["alloc", "derive"] }
 serde_json = { workspace = true, optional = true, features = ["alloc"] }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 release.workspace = true
-# Need "force-soft", see https://github.com/RustCrypto/hashes/issues/446
-sha2 = { workspace = true, features = ["force-soft"] }
 uuid.workspace = true
 safe-mmio = { workspace = true, optional = true }
 virtio-drivers = { workspace = true, optional = true }
@@ -84,7 +81,7 @@ zeroize = { workspace = true, features = ["alloc", "derive"] }
 test.workspace = true
 
 [features]
-attest = ["vsock", "dep:aes-kw", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
+attest = ["vsock", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
 attest-serial = ["attest"]
 
 default = []

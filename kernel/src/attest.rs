@@ -19,16 +19,18 @@ use crate::{
 #[cfg(feature = "attest-serial")]
 use crate::{io::DEFAULT_IO_DRIVER, serial::SerialPort};
 use crate::{vsock::VMADDR_CID_HOST, vsock::VMADDR_PORT_ANY, vsock::stream::VsockStream};
-use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
-use aes_kw::{KeyInit as _, KwAes256};
 use alloc::{string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
     CryptoError,
+    aead::{AeadAlg, AeadInstance},
     ecc::{EccKey, curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z},
+    keywrap,
 };
 use cocoon_tpm_tpm2_interface::TpmiAlgHash;
 use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
-use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
+use cocoon_tpm_utils_common::io_slices::{
+    IoSlicesIterCommon as _, SingletonIoSlice, SingletonIoSliceMut,
+};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -217,32 +219,37 @@ impl AttestationDriver {
         kdm.extend_from_slice(&(0_u32).to_be_bytes());
         kdm.extend_from_slice(&(256_u32).to_be_bytes());
 
-        let wrapping_key: KwAes256 = {
-            let mut buf = SecretSlice::new_sized(32).or(Err(AttestationError::VecAlloc))?;
+        let mut wrapping_key = SecretSlice::new_sized(32).or(Err(AttestationError::VecAlloc))?;
 
-            concat_kdf::concat_kdf_sha256(&z, &kdm, &mut buf)
-                .map_err(AttestationError::KeyDerivation)?;
+        concat_kdf::concat_kdf_sha256(&z, &kdm, &mut wrapping_key)
+            .map_err(AttestationError::KeyDerivation)?;
 
-            KwAes256::new_from_slice(&buf).or(Err(AttestationError::WrapKeyArrayConvert))
-        }?;
+        // A256KW is the unpadded AES key wrap of RFC 7518, section 4.4
+        // (RFC 3394): the unwrapped CEK is 8 bytes shorter than the wrapped
+        // CEK. All response data is untrusted, so reject malformed lengths
+        // instead of relying on the subtraction to not underflow.
+        let cek_len = decryption
+            .wrapped_cek
+            .len()
+            .checked_sub(8)
+            .ok_or(AttestationError::CekUnwrap)?;
+        let mut cek = SecretSlice::new_sized(cek_len).or(Err(AttestationError::VecAlloc))?;
 
-        let mut cek = SecretSlice::new_sized(&decryption.wrapped_cek.len() - 8)
-            .or(Err(AttestationError::VecAlloc))?;
+        keywrap::aes_kw_unwrap(&wrapping_key, &decryption.wrapped_cek, &mut cek)
+            .map_err(|_| AttestationError::CekUnwrap)?;
 
-        wrapping_key
-            .unwrap_key(&decryption.wrapped_cek, &mut cek)
-            .or(Err(AttestationError::CekUnwrap))?;
+        // Decrypt the secret in place, with the IV, AAD and detached
+        // authentication tag taken from the response.
+        let mut aead =
+            AeadInstance::new(AeadAlg::Aes256Gcm, &cek).map_err(AttestationError::Crypto)?;
 
-        let cipher = Aes256Gcm::new(GenericArray::from_slice(&cek));
-
-        cipher
-            .decrypt_in_place_detached(
-                Nonce::from_slice(&decryption.iv),
-                &decryption.aad,
-                secret,
-                GenericArray::from_slice(&decryption.tag),
-            )
-            .map_err(AttestationError::SecretDecrypt)?;
+        aead.decrypt_in_place(
+            &decryption.iv,
+            SingletonIoSlice::new(&decryption.aad).map_infallible_err(),
+            SingletonIoSliceMut::new(secret).map_infallible_err(),
+            &decryption.tag,
+        )
+        .map_err(AttestationError::SecretDecrypt)?;
 
         Ok(())
     }
@@ -310,7 +317,7 @@ pub enum AttestationError {
     /// Attestation successful, but no public key found.
     PublicKeyMissing,
     /// Attestation successful, but unable to decrypt secret.
-    SecretDecrypt(aes_gcm::Error),
+    SecretDecrypt(CryptoError),
     /// Attestation successful, but no secret found.
     SecretMissing,
     /// Unable to fetch SEV-SNP attestation report.
@@ -319,8 +326,6 @@ pub enum AttestationError {
     UnsupportedTee,
     /// Unable to allocate memory for Vec.
     VecAlloc,
-    // Unable to convert wrap key to 32 byte array.
-    WrapKeyArrayConvert,
 }
 
 impl From<AttestationError> for SvsmError {
@@ -419,7 +424,6 @@ mod tests {
     use super::*;
     use alloc::vec;
     use cocoon_tpm_tpm2_interface::{Tpm2bEccParameter, TpmBuffer};
-    use sha2::{Digest, Sha512};
 
     fn make_ecc_point(x: &[u8], y: &[u8]) -> TpmsEccPoint<'static> {
         TpmsEccPoint {
@@ -470,17 +474,26 @@ mod tests {
             let result_chal_first = hash(&response_chal_first, &pub_key).unwrap();
             let result_key_first = hash(&response_key_first, &pub_key).unwrap();
 
-            let mut sha = Sha512::new();
-            sha.update(&challenge);
-            sha.update(&x);
-            sha.update(&y);
-            assert_eq!(result_chal_first, sha.finalize().as_slice());
+            // Reference digests of the fixed test inputs, computed
+            // independently of this code with Python's hashlib:
+            // sha512(challenge || x || y) and sha512(x || y || challenge).
+            const EXPECTED_CHALLENGE_FIRST: [u8; 64] = [
+                0xc2, 0x43, 0xa5, 0x4e, 0xd1, 0xca, 0xfc, 0xcd, 0x87, 0xf3, 0x2e, 0x3c, 0x2b, 0x34,
+                0x09, 0x16, 0x2d, 0x14, 0x57, 0xf8, 0xcd, 0x24, 0x53, 0x78, 0xdc, 0xfb, 0x8b, 0xaa,
+                0x29, 0x46, 0x69, 0xd0, 0x41, 0x84, 0x3e, 0x47, 0x8b, 0x9b, 0xfb, 0x6f, 0x6e, 0x99,
+                0x64, 0x9e, 0x8b, 0xcb, 0xc8, 0xad, 0x3c, 0xe5, 0xa3, 0xba, 0x11, 0x40, 0xdc, 0xac,
+                0xd1, 0x0d, 0x39, 0x1a, 0xce, 0x22, 0x20, 0x7b,
+            ];
+            const EXPECTED_KEY_FIRST: [u8; 64] = [
+                0xbd, 0x35, 0x0b, 0x25, 0x3f, 0xae, 0xad, 0xc5, 0xff, 0x36, 0xfe, 0x96, 0x23, 0x6b,
+                0x88, 0x3f, 0x28, 0x0f, 0xc0, 0x10, 0xf3, 0x87, 0x86, 0xc0, 0xc6, 0x53, 0x1e, 0xda,
+                0xa3, 0xb9, 0xfe, 0x77, 0x97, 0xd1, 0xc0, 0xbc, 0x12, 0xa1, 0xe5, 0x5a, 0x1e, 0x6c,
+                0x72, 0x13, 0x52, 0x93, 0x9a, 0x48, 0x62, 0x73, 0xa6, 0xc4, 0xb4, 0xec, 0x75, 0xeb,
+                0xc9, 0x9f, 0xe0, 0xc6, 0x96, 0x51, 0xb6, 0x11,
+            ];
 
-            let mut sha = Sha512::new();
-            sha.update(&x);
-            sha.update(&y);
-            sha.update(&challenge);
-            assert_eq!(result_key_first, sha.finalize().as_slice());
+            assert_eq!(result_chal_first, EXPECTED_CHALLENGE_FIRST);
+            assert_eq!(result_key_first, EXPECTED_KEY_FIRST);
 
             assert_ne!(result_chal_first, result_key_first);
         }
